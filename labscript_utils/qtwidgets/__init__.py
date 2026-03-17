@@ -10,3 +10,5 @@
 # for the full license.                                             #
 #                                                                   #
 #####################################################################
+
+from .shotqueue import FILEPATH_COLUMN, ShotQueueTreeView, ShotQueueWidget
