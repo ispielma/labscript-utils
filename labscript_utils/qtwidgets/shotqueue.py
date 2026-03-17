@@ -22,6 +22,14 @@ FILEPATH_COLUMN = 0
 __all__ = ['FILEPATH_COLUMN', 'ShotQueueTreeView', 'ShotQueueWidget']
 
 
+def _normalise_extensions(accepted_extensions):
+    if accepted_extensions is None:
+        accepted_extensions = ('.h5', '.hdf5')
+    elif isinstance(accepted_extensions, str):
+        accepted_extensions = (accepted_extensions,)
+    return tuple(extension.lower() for extension in accepted_extensions)
+
+
 class ShotQueueTreeView(QTreeView):
     """Generic queue view with delete-key handling and shot-file drops."""
 
@@ -30,7 +38,7 @@ class ShotQueueTreeView(QTreeView):
 
     def __init__(self, parent=None, accepted_extensions=None):
         QTreeView.__init__(self, parent)
-        self._accepted_extensions = self._normalise_extensions(accepted_extensions)
+        self._accepted_extensions = _normalise_extensions(accepted_extensions)
         self.header().setStretchLastSection(True)
         self.setAutoScroll(False)
         self.setAcceptDrops(True)
@@ -47,7 +55,7 @@ class ShotQueueTreeView(QTreeView):
         return tuple(self._accepted_extensions)
 
     def set_accepted_extensions(self, accepted_extensions):
-        self._accepted_extensions = self._normalise_extensions(accepted_extensions)
+        self._accepted_extensions = _normalise_extensions(accepted_extensions)
 
     def keyPressEvent(self, event):
         if event.key() == Qt.Key_Delete:
@@ -98,12 +106,6 @@ class ShotQueueTreeView(QTreeView):
     def _is_accepted_path(self, path):
         return os.path.isfile(path) and path.lower().endswith(self._accepted_extensions)
 
-    def _normalise_extensions(self, accepted_extensions):
-        if accepted_extensions is None:
-            accepted_extensions = ('.h5', '.hdf5')
-        return tuple(extension.lower() for extension in accepted_extensions)
-
-
 class ShotQueueWidget(QWidget):
     """Reusable single-column shot queue editor widget."""
 
@@ -120,7 +122,7 @@ class ShotQueueWidget(QWidget):
         column_title='Filepath',
     ):
         QWidget.__init__(self, parent)
-        self.accepted_extensions = self._normalise_extensions(accepted_extensions)
+        self.accepted_extensions = _normalise_extensions(accepted_extensions)
         self.file_dialog_filter = file_dialog_filter
         self.allow_duplicates = allow_duplicates
         self.last_opened_shots_folder = ''
@@ -352,8 +354,3 @@ class ShotQueueWidget(QWidget):
             selection_model.select(index, QItemSelectionModel.Select | QItemSelectionModel.Rows)
         if rows:
             self.queue_view.setCurrentIndex(self.queue_model.index(rows[0], FILEPATH_COLUMN))
-
-    def _normalise_extensions(self, accepted_extensions):
-        if accepted_extensions is None:
-            accepted_extensions = ('.h5', '.hdf5')
-        return tuple(extension.lower() for extension in accepted_extensions)
