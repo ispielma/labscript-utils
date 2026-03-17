@@ -257,7 +257,7 @@ class Context(SecureContext):
         # be a SecureSocket. If caller has explicitly requested a different socket type
         # (e.g since pyzmq 25, ThreadAuthenticator sets up an internal socket by calling
         # `Context.socket(..., socket_class=zmq.Socket)), then don't.`
-        if socket_class is None or issubclass(socket_class, SecureContext):
+        if socket_class is None or issubclass(socket_class, SecureSocket):
             config = get_config()
             kwargs['allow_insecure'] = config['allow_insecure']
         return SecureContext.socket(self, socket_type=socket_type, **kwargs)
@@ -383,4 +383,3 @@ def ensure_connected_to_zlog():
     else:
         client.ping()
     _connected_to_zlog = True
-
