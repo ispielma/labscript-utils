@@ -12,6 +12,7 @@
 #####################################################################
 
 import sys
+import signal
 from labscript_utils import dedent
 
 try:
@@ -63,6 +64,28 @@ def get_qapplication(argv=None):
     if qapplication is None:
         qapplication = QtWidgets.QApplication(sys.argv if argv is None else argv)
     return configure_qapplication(qapplication)
+
+
+def run_qapplication(qapplication, on_shutdown=None, interrupt_interval=500):
+    """Run a QApplication with labscript's standard Ctrl-C handling.
+
+    Args:
+        qapplication: The QApplication instance to run.
+        on_shutdown: Optional callable invoked after the event loop exits.
+        interrupt_interval: Milliseconds between no-op timer wakeups that let
+            the interpreter process Ctrl-C.
+
+    Returns:
+        The integer return code from ``qapplication.exec_()``.
+    """
+    timer = QtCore.QTimer()
+    timer.start(interrupt_interval)
+    timer.timeout.connect(lambda: None)
+    signal.signal(signal.SIGINT, lambda *args: qapplication.exit())
+    result = qapplication.exec_()
+    if on_shutdown is not None:
+        on_shutdown()
+    return result
 
 
 class Splash(QtWidgets.QFrame):
