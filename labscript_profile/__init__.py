@@ -143,21 +143,22 @@ def _convert_legacy_labconfig(legacy_path, toml_path):
     config = configparser.ConfigParser(interpolation=None)
     config.read(legacy_path)
     template_data = _example_labconfig_data()
-    default_template = template_data.get('DEFAULT', {})
+    default_template = template_data.get('default', {})
     data = {
-        'DEFAULT': {
+        'default': {
             key: _coerce_legacy_value(value, default_template.get(key))
             for key, value in config.defaults().items()
         }
     }
     for section in config.sections():
+        canonical_section = section.lower()
         section_items = dict(config._sections[section])
         section_items.pop('__name__', None)
         autoload = section_items.get('autoload_config_file')
         if isinstance(autoload, str) and autoload.lower().endswith('.ini'):
             section_items['autoload_config_file'] = autoload[:-4] + '.toml'
-        section_template = template_data.get(section, {})
-        data[section] = {
+        section_template = template_data.get(canonical_section, {})
+        data[canonical_section] = {
             key: _coerce_legacy_value(value, section_template.get(key))
             for key, value in section_items.items()
         }
