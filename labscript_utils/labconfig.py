@@ -12,6 +12,7 @@
 #####################################################################
 import configparser
 import os
+import subprocess
 import warnings
 from ast import literal_eval
 from pathlib import Path
@@ -244,7 +245,6 @@ def load_appconfig(filename, return_save_path=False):
 
 def get_app_saved_configs_dir(exp_config, app_name):
     """Return the application-specific directory within ``DEFAULT.app_saved_configs``."""
-
     try:
         base_path = exp_config.get('DEFAULT', 'app_saved_configs')
     except LabConfig.NoOptionError:
@@ -263,3 +263,23 @@ def get_app_saved_configs_dir(exp_config, app_name):
     if not os.path.exists(path):
         os.makedirs(path)
     return path
+
+def launch_from_config(config, filepath, program_key, arguments_key,
+                       missing_program_message, launch_failed_message,
+                       error_dialog):
+    """Launch a configured external program on a file path."""
+    program_path = config.get('programs', program_key)
+    if not program_path:
+        error_dialog(missing_program_message)
+        return False
+    arguments = config.get('programs', arguments_key).split()
+    arguments = (
+        [filepath if arg == '{file}' else arg for arg in arguments]
+        if '{file}' in arguments else [filepath] + arguments
+    )
+    try:
+        subprocess.Popen([program_path] + arguments)
+    except Exception as exc:
+        error_dialog(launch_failed_message % (config.config_path, str(exc)))
+        return False
+    return True
