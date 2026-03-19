@@ -43,7 +43,7 @@ save_git_info = false
 
 ["blacs/plugins"]
 connection_table = true
-"connection_table.hashable_types" = ['.py', '.txt', '.toml', '.json']
+"connection_table.hashable_types" = ['.py', '.txt', '.ini', '.toml', '.json']
 "connection_table.polling_interval" = 1.0
 delete_repeated_shots = false
 general = true
