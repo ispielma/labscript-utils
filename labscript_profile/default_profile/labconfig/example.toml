@@ -1,4 +1,4 @@
-[DEFAULT]
+[default]
 apparatus_name = 'example_apparatus'
 shared_drive = 'C:'
 experiment_shot_storage = '%(shared_drive)s\Experiments\%(apparatus_name)s'
@@ -20,7 +20,7 @@ blacs = 'localhost'
 lyse = 'localhost'
 
 [ports]
-BLACS = 42517
+blacs = 42517
 lyse = 42519
 runviewer = 42521
 runmanager = 42523
@@ -41,7 +41,7 @@ hdf5_viewer_arguments = '{file}'
 save_hg_info = false
 save_git_info = false
 
-["BLACS/plugins"]
+["blacs/plugins"]
 connection_table = true
 "connection_table.hashable_types" = ['.py', '.txt', '.toml', '.json']
 "connection_table.polling_interval" = 1.0

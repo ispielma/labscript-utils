@@ -61,7 +61,7 @@ def make_labconfig_file(apparatus_name = None):
         config['programs']['text_editor_arguments'] = '-a TextEdit {file}'
     if sys.platform != 'win32':
         config['programs']['hdf5_viewer'] = 'hdfview'
-        config['DEFAULT']['shared_drive'] = '$HOME/labscript_shared'
+        config['default']['shared_drive'] = '$HOME/labscript_shared'
     shared_secret = make_shared_secret(target_path.parent)
     shared_secret_entry = Path(
         '%(labscript_suite)s', shared_secret.relative_to(LABSCRIPT_SUITE_PROFILE)
@@ -69,7 +69,7 @@ def make_labconfig_file(apparatus_name = None):
     config['security']['shared_secret'] = str(shared_secret_entry)
     if apparatus_name is not None:
         print(f'\tSetting apparatus name to \'{apparatus_name}\'')
-        config['DEFAULT']['apparatus_name'] = apparatus_name
+        config['default']['apparatus_name'] = apparatus_name
 
     target_path.parent.mkdir(parents=True, exist_ok=True)
     dump_toml_file(target_path, config)

@@ -79,7 +79,9 @@ class LabConfig(TomlConfigParser):
                 self.file_format += "%s = <value>\n" % option
 
         TomlConfigParser.__init__(
-            self, defaults=defaults, interpolation=EnvInterpolation()
+            self,
+            defaults=defaults,
+            interpolation=EnvInterpolation(),
         )
         for path in config_paths:
             self._read_path(path)
