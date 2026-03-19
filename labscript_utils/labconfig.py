@@ -240,3 +240,26 @@ def load_appconfig(filename, return_save_path=False):
     if return_save_path:
         return data, str(save_path)
     return data
+
+
+def get_app_saved_configs_dir(exp_config, app_name):
+    """Return the application-specific directory within ``DEFAULT.app_saved_configs``."""
+
+    try:
+        base_path = exp_config.get('DEFAULT', 'app_saved_configs')
+    except LabConfig.NoOptionError:
+        exp_config.set(
+            'DEFAULT',
+            'app_saved_configs',
+            os.path.join(
+                '%(labscript_suite)s',
+                'userlib',
+                'app_saved_configs',
+                '%(apparatus_name)s',
+            ),
+        )
+        base_path = exp_config.get('DEFAULT', 'app_saved_configs')
+    path = os.path.join(base_path, app_name)
+    if not os.path.exists(path):
+        os.makedirs(path)
+    return path
