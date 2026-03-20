@@ -139,14 +139,6 @@ class ShotQueueWidget(QWidget):
         self.delete_button.setText('Delete')
         self.clear_button = QToolButton(self)
         self.clear_button.setText('Clear')
-        self.move_top_button = QToolButton(self)
-        self.move_top_button.setText('Top')
-        self.move_up_button = QToolButton(self)
-        self.move_up_button.setText('Up')
-        self.move_down_button = QToolButton(self)
-        self.move_down_button.setText('Down')
-        self.move_bottom_button = QToolButton(self)
-        self.move_bottom_button.setText('Bottom')
 
         button_layout = QHBoxLayout()
         button_layout.setContentsMargins(0, 0, 0, 0)
@@ -154,10 +146,6 @@ class ShotQueueWidget(QWidget):
         button_layout.addWidget(self.delete_button)
         button_layout.addWidget(self.clear_button)
         button_layout.addStretch(1)
-        button_layout.addWidget(self.move_top_button)
-        button_layout.addWidget(self.move_up_button)
-        button_layout.addWidget(self.move_down_button)
-        button_layout.addWidget(self.move_bottom_button)
 
         layout = QVBoxLayout(self)
         layout.setContentsMargins(0, 0, 0, 0)
@@ -167,10 +155,6 @@ class ShotQueueWidget(QWidget):
         self.add_button.clicked.connect(self.prompt_for_files)
         self.delete_button.clicked.connect(self.remove_selected)
         self.clear_button.clicked.connect(self.clear)
-        self.move_top_button.clicked.connect(self.move_top)
-        self.move_up_button.clicked.connect(self.move_up)
-        self.move_down_button.clicked.connect(self.move_down)
-        self.move_bottom_button.clicked.connect(self.move_bottom)
         self.queue_view.deleteRequested.connect(self.remove_selected)
         self.queue_view.filesDropped.connect(self.add_files)
         self.queue_model.rowsInserted.connect(self._on_queue_changed)
@@ -252,41 +236,6 @@ class ShotQueueWidget(QWidget):
         if self.queue_model.rowCount():
             self.queue_model.removeRows(0, self.queue_model.rowCount())
 
-    def move_up(self):
-        selected_rows = self.selected_rows()
-        if not selected_rows or selected_rows[0] == 0:
-            return
-        for row_index in selected_rows:
-            self.queue_model.insertRow(row_index - 1, self.queue_model.takeRow(row_index))
-        self._select_rows([row - 1 for row in selected_rows])
-
-    def move_down(self):
-        selected_rows = self.selected_rows()
-        if not selected_rows or selected_rows[-1] == self.queue_model.rowCount() - 1:
-            return
-        for row_index in reversed(selected_rows):
-            self.queue_model.insertRow(row_index + 1, self.queue_model.takeRow(row_index))
-        self._select_rows([row + 1 for row in selected_rows])
-
-    def move_top(self):
-        selected_rows = self.selected_rows()
-        if not selected_rows or selected_rows[0] == 0:
-            return
-        rows = [self.queue_model.takeRow(row_index) for row_index in reversed(selected_rows)]
-        for offset, row_items in enumerate(reversed(rows)):
-            self.queue_model.insertRow(offset, row_items)
-        self._select_rows(range(len(selected_rows)))
-
-    def move_bottom(self):
-        selected_rows = self.selected_rows()
-        if not selected_rows or selected_rows[-1] == self.queue_model.rowCount() - 1:
-            return
-        rows = [self.queue_model.takeRow(row_index) for row_index in reversed(selected_rows)]
-        start_row = self.queue_model.rowCount()
-        for row_items in reversed(rows):
-            self.queue_model.appendRow(row_items)
-        self._select_rows(range(start_row, self.queue_model.rowCount()))
-
     def is_in_queue(self, path):
         path = os.path.abspath(str(path))
         return bool(self.queue_model.findItems(path, column=FILEPATH_COLUMN))
@@ -340,10 +289,6 @@ class ShotQueueWidget(QWidget):
         has_selection = bool(selected_rows)
         self.delete_button.setEnabled(has_selection)
         self.clear_button.setEnabled(bool(row_count))
-        self.move_top_button.setEnabled(has_selection and selected_rows[0] > 0)
-        self.move_up_button.setEnabled(has_selection and selected_rows[0] > 0)
-        self.move_bottom_button.setEnabled(has_selection and selected_rows[-1] < row_count - 1)
-        self.move_down_button.setEnabled(has_selection and selected_rows[-1] < row_count - 1)
 
     def _select_rows(self, rows):
         rows = list(rows)
