@@ -16,6 +16,7 @@ from qtutils.qt.QtCore import *
 from qtutils.qt.QtGui import *
 from qtutils.qt.QtWidgets import *
 from qtutils.qt.QtCore import pyqtSignal as Signal
+from labscript_utils.qtwidgets.appconfig import select_open_files
 
 
 FILEPATH_COLUMN = 0
@@ -234,14 +235,12 @@ class ShotQueueWidget(QWidget):
         return added
 
     def prompt_for_files(self):
-        file_names = QFileDialog.getOpenFileNames(
+        file_names = select_open_files(
             self,
             'Select shot file(s) to add to the queue',
             self.last_opened_shots_folder,
             self.file_dialog_filter,
         )
-        if isinstance(file_names, tuple):
-            file_names, _ = file_names
         return self.add_files(file_names)
 
     def remove_selected(self):

@@ -12,17 +12,80 @@
 #####################################################################
 """Small Qt helpers for app-specific configuration save/load actions."""
 import os
+from qtutils import inmain_decorator
 from qtutils.qt import QtWidgets
+
+
+def normalize_dialog_path(selection, suffix=None):
+    """Return an absolute path from a QFileDialog result, or ``None`` on cancel."""
+    if isinstance(selection, tuple):
+        selection, _ = selection
+    if not selection:
+        return None
+    path = os.path.abspath(selection)
+    if suffix and not path.lower().endswith(suffix.lower()):
+        path += suffix
+    return path
+
+
+def normalize_dialog_paths(selection):
+    """Return absolute paths from a multi-file dialog result."""
+    if isinstance(selection, tuple):
+        selection, _ = selection
+    return [os.path.abspath(path) for path in selection]
+
+
+def select_open_file(parent, title, directory, file_filter):
+    """Open a file-selection dialog and return an absolute path or ``None``."""
+    return normalize_dialog_path(
+        QtWidgets.QFileDialog.getOpenFileName(parent, title, directory, file_filter)
+    )
+
+
+def select_open_files(parent, title, directory, file_filter):
+    """Open a multi-file dialog and return absolute paths."""
+    return normalize_dialog_paths(
+        QtWidgets.QFileDialog.getOpenFileNames(parent, title, directory, file_filter)
+    )
+
+
+def select_save_file(parent, title, directory, file_filter, suffix=None):
+    """Open a save-file dialog and return an absolute path or ``None``."""
+    return normalize_dialog_path(
+        QtWidgets.QFileDialog.getSaveFileName(parent, title, directory, file_filter),
+        suffix=suffix,
+    )
+
+
+def select_directory(parent, title, directory):
+    """Open a directory-selection dialog and return an absolute path or ``None``."""
+    return normalize_dialog_path(
+        QtWidgets.QFileDialog.getExistingDirectory(parent, title, directory)
+    )
+
+
+@inmain_decorator()
+def error_dialog(parent, title, message):
+    """Show a modal warning dialog in the main GUI thread."""
+    QtWidgets.QMessageBox.warning(parent, title, message)
+
+
+@inmain_decorator()
+def question_dialog(parent, title, message):
+    """Ask a yes/no question in the main GUI thread and return ``True`` on yes."""
+    reply = QtWidgets.QMessageBox.question(
+        parent,
+        title,
+        message,
+        QtWidgets.QMessageBox.Yes | QtWidgets.QMessageBox.No,
+    )
+    return reply == QtWidgets.QMessageBox.Yes
+
 
 def select_config_file(parent, title, default, file_filter, save):
     """Return an absolute path chosen through a Qt open/save file dialog."""
-    chooser = QtWidgets.QFileDialog.getSaveFileName if save else QtWidgets.QFileDialog.getOpenFileName
-    filename = chooser(parent, title, default, file_filter)
-    if isinstance(filename, tuple):
-        filename, _ = filename
-    if not filename:
-        return None
-    return os.path.abspath(filename)
+    chooser = select_save_file if save else select_open_file
+    return chooser(parent, title, default, file_filter)
 
 class AppConfigActions:
     """Shared QAction plumbing for app-specific save/load configuration code."""
@@ -43,6 +106,7 @@ class AppConfigActions:
         self.error_dialog = error_dialog
         self.last_save_config_file = None
         self.last_save_data = None
+        self.save_as_action.setEnabled(True)
         save_action.triggered.connect(self.on_save_configuration_triggered)
         save_as_action.triggered.connect(self.on_save_configuration_as_triggered)
         load_action.triggered.connect(self.on_load_configuration_triggered)

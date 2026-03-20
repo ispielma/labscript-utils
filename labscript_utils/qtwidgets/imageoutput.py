@@ -15,6 +15,7 @@ import sys
 import os
 
 from qtutils.qt import QtCore, QtGui, QtWidgets
+from labscript_utils.qtwidgets.appconfig import error_dialog, select_open_file
 from qtutils.qt.QtCore import pyqtSignal as Signal
 
 class BrowseButton(QtWidgets.QPushButton):
@@ -35,12 +36,14 @@ class BrowseButton(QtWidgets.QPushButton):
         supported_images = supported_images [:-1]
         supported_images += ")"
         
-        image_file = QtWidgets.QFileDialog.getOpenFileName(self, 'Select image file to load', self.last_opened_folder, supported_images)
-        if type(image_file) is tuple:
-            image_file, _ = image_file
-        if image_file == None or image_file == "":
+        image_file = select_open_file(
+            self,
+            'Select image file to load',
+            self.last_opened_folder,
+            supported_images,
+        )
+        if not image_file:
             return
-        image_file = os.path.abspath(image_file)
         if not os.path.exists(image_file):
             return 
             
@@ -220,7 +223,12 @@ class ImageOutput(QtWidgets.QWidget):
         pixmap.loadFromData(decoded_image, flags=QtCore.Qt.AvoidDither | QtCore.Qt.ThresholdAlphaDither | QtCore.Qt.ThresholdDither)
         # print decoded_image
         if pixmap.size() != self.image_size:
-            QtWidgets.QMessageBox.warning(self, "Failed to load image", 'The image size was incorrect. It must be %dx%d pixels.'%(self.image_size.width(), self.image_size.height()), QtWidgets.QMessageBox.Ok, QtWidgets.QMessageBox.Ok)
+            error_dialog(
+                self,
+                "Failed to load image",
+                'The image size was incorrect. It must be %dx%d pixels.'
+                % (self.image_size.width(), self.image_size.height()),
+            )
             return
         
         self._value = value

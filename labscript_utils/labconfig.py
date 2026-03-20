@@ -272,10 +272,10 @@ def launch_from_config(config, filepath, program_key, arguments_key,
     if not program_path:
         error_dialog(missing_program_message)
         return False
-    arguments = config.get('programs', arguments_key).split()
+    arguments = config.get('programs', arguments_key)
     arguments = (
-        [filepath if arg == '{file}' else arg for arg in arguments]
-        if '{file}' in arguments else [filepath] + arguments
+        arguments.replace('{file}', filepath).split()
+        if '{file}' in arguments else [filepath] + arguments.split()
     )
     try:
         subprocess.Popen([program_path] + arguments)

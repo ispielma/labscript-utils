@@ -66,6 +66,23 @@ def get_qapplication(argv=None):
     return configure_qapplication(qapplication)
 
 
+class FirstPaintMainWindow(QtWidgets.QMainWindow):
+    """A ``QMainWindow`` that emits ``firstPaint`` after its first paint event."""
+
+    firstPaint = QtCore.pyqtSignal()
+
+    def __init__(self, *args, **kwargs):
+        super().__init__(*args, **kwargs)
+        self._previously_painted = False
+
+    def paintEvent(self, event):
+        result = super().paintEvent(event)
+        if not self._previously_painted:
+            self._previously_painted = True
+            self.firstPaint.emit()
+        return result
+
+
 def run_qapplication(qapplication, on_shutdown=None, interrupt_interval=500):
     """Run a QApplication with labscript's standard Ctrl-C handling.
 
