@@ -65,7 +65,7 @@ def add_userlib_and_pythonlib():
     config.read_toml(labconfig)
     for option in ['userlib', 'pythonlib']:
         try:
-            paths = config.get('DEFAULT', option)
+            paths = config.get('default', option)
         except (configparser.NoSectionError, configparser.NoOptionError):
             paths = ''
         if paths:
