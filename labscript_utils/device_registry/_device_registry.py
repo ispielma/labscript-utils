@@ -74,7 +74,7 @@ def _get_device_dirs():
     """Return the directory of labscript_devices, and the folders containing
     submodules of any packages listed in the user_devices labconfig setting"""
     try:
-        user_devices = LabConfig().get('DEFAULT', 'user_devices')
+        user_devices = LabConfig().get('default', 'user_devices')
     except (LabConfig.NoOptionError, LabConfig.NoSectionError):
         user_devices = 'user_devices'
     # Split on commas, remove whitespace:

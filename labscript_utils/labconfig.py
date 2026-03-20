@@ -86,21 +86,22 @@ class LabConfig(TomlConfigParser):
         for path in config_paths:
             self._read_path(path)
 
-        experiment_name = self.get("DEFAULT", "experiment_name", fallback=None)
+        experiment_name = self.get("default", "experiment_name", fallback=None)
         if experiment_name:
             msg = """The experiment_name keyword has been renamed apparatus_name in
                 labscript_utils 3.0, and will be removed in a future version. Please
                 update your labconfig to use the apparatus_name keyword."""
             warnings.warn(dedent(msg), FutureWarning)
-            if self.get("DEFAULT", "apparatus_name", fallback=None):
+            if self.get("default", "apparatus_name", fallback=None):
                 msg = """You have defined both experiment_name and apparatus_name in
                     your labconfig. Please omit the deprecate experiment_name
                     keyword."""
                 raise Exception(dedent(msg))
-            self.set("DEFAULT", "apparatus_name", experiment_name)
+            self.set("default", "apparatus_name", experiment_name)
 
         try:
             for section, options in required_params.items():
+                section = self._canonical_section_name(section)
                 for option in options:
                     self.get(section, option)
         except (configparser.NoOptionError, configparser.NoSectionError):
@@ -233,7 +234,7 @@ def load_appconfig(filename, return_save_path=False):
         data = {
             section_name: dict(section.items())
             for section_name, section in raw.items()
-            if section_name != 'DEFAULT' and isinstance(section, dict)
+            if section_name != 'default' and isinstance(section, dict)
         }
         if filename.suffix.lower() == '.toml':
             save_path = filename
