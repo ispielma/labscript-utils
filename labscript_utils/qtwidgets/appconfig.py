@@ -12,6 +12,7 @@
 #####################################################################
 """Small Qt helpers for app-specific configuration save/load actions."""
 import os
+from pathlib import Path
 from qtutils import inmain_decorator
 from qtutils.qt import QtWidgets
 
@@ -23,8 +24,10 @@ def normalize_dialog_path(selection, suffix=None):
     if not selection:
         return None
     path = os.path.abspath(selection)
-    if suffix and not path.lower().endswith(suffix.lower()):
-        path += suffix
+    if suffix:
+        current_path = Path(path)
+        if current_path.suffix.lower() != suffix.lower():
+            path = str(current_path.with_suffix(suffix))
     return path
 
 

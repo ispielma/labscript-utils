@@ -12,6 +12,7 @@
 #####################################################################
 import configparser
 import os
+import shlex
 import subprocess
 import warnings
 from ast import literal_eval
@@ -274,10 +275,10 @@ def launch_from_config(config, filepath, program_key, arguments_key,
         error_dialog(missing_program_message)
         return False
     arguments = config.get('programs', arguments_key)
-    arguments = (
-        arguments.replace('{file}', filepath).split()
-        if '{file}' in arguments else [filepath] + arguments.split()
-    )
+    has_filepath_placeholder = '{file}' in arguments
+    arguments = shlex.split(arguments.replace('{file}', filepath))
+    if not has_filepath_placeholder:
+        arguments.insert(0, filepath)
     try:
         subprocess.Popen([program_path] + arguments)
     except Exception as exc:
