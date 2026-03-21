@@ -47,6 +47,7 @@ def make_labconfig_file(apparatus_name = None):
 
     source_path = os.path.join(LABSCRIPT_SUITE_PROFILE, 'labconfig', 'example.toml')
     target_path = default_labconfig_path()
+    # LEGACY INI COMPATIBILITY. DEPRECATED CODE, WILL BE REMOVED.
     legacy_path = legacy_labconfig_path()
     if os.path.exists(target_path) or (legacy_path is not None and os.path.exists(legacy_path)):
         raise FileExistsError(target_path)

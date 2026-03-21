@@ -42,7 +42,7 @@ def default_labconfig_path():
         return None
     return LABSCRIPT_SUITE_PROFILE / 'labconfig' / f'{hostname()}.toml'
 
-
+# LEGACY INI COMPATIBILITY. DEPRECATED CODE, WILL BE REMOVED.
 def legacy_labconfig_path():
     """Temporary legacy INI labconfig location. Slated for removal soon."""
     if LABSCRIPT_SUITE_PROFILE is None:
@@ -83,6 +83,7 @@ def ensure_labconfig():
         return None
     if labconfig.exists():
         return labconfig
+    # LEGACY INI COMPATIBILITY. DEPRECATED CODE, WILL BE REMOVED.
     legacy = legacy_labconfig_path()
     if legacy is None or not legacy.exists():
         return labconfig
@@ -100,7 +101,7 @@ def _example_labconfig_data():
         return load_toml_file(bundled_example)
     return {}
 
-
+# LEGACY INI COMPATIBILITY. DEPRECATED CODE, WILL BE REMOVED.
 def _coerce_legacy_value(value, template_value):
     if template_value is None:
         return value
@@ -137,7 +138,7 @@ def _coerce_legacy_value(value, template_value):
         return [_coerce_legacy_value(item, template_item) for item in parsed]
     return value
 
-
+# LEGACY INI COMPATIBILITY. DEPRECATED CODE, WILL BE REMOVED.
 def _convert_legacy_labconfig(legacy_path, toml_path):
     """Temporary legacy migration path from INI to TOML. Slated for removal soon."""
     config = configparser.ConfigParser(interpolation=None)
@@ -155,6 +156,7 @@ def _convert_legacy_labconfig(legacy_path, toml_path):
         section_items = dict(config._sections[section])
         section_items.pop('__name__', None)
         autoload = section_items.get('autoload_config_file')
+        # LEGACY INI COMPATIBILITY. DEPRECATED CODE, WILL BE REMOVED.
         if isinstance(autoload, str) and autoload.lower().endswith('.ini'):
             section_items['autoload_config_file'] = autoload[:-4] + '.toml'
         section_template = template_data.get(canonical_section, {})

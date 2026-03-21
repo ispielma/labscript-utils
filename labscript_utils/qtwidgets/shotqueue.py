@@ -121,11 +121,13 @@ class ShotQueueWidget(QWidget):
         file_dialog_filter='Shot files (*.h5 *.hdf5)',
         allow_duplicates=False,
         column_title='Filepath',
+        controls=('add', 'delete', 'clear'),
     ):
         QWidget.__init__(self, parent)
         self.accepted_extensions = _normalise_extensions(accepted_extensions)
         self.file_dialog_filter = file_dialog_filter
         self.allow_duplicates = allow_duplicates
+        self.controls = tuple(controls)
         self.last_opened_shots_folder = ''
 
         self.queue_model = QStandardItemModel(self)
@@ -134,28 +136,39 @@ class ShotQueueWidget(QWidget):
         self.queue_view = ShotQueueTreeView(self, accepted_extensions=self.accepted_extensions)
         self.queue_view.setModel(self.queue_model)
 
-        self.add_button = QToolButton(self)
-        self.add_button.setText('Add')
-        self.delete_button = QToolButton(self)
-        self.delete_button.setText('Delete')
-        self.clear_button = QToolButton(self)
-        self.clear_button.setText('Clear')
+        self.add_button = None
+        self.delete_button = None
+        self.clear_button = None
+        button_layout = None
 
-        button_layout = QHBoxLayout()
-        button_layout.setContentsMargins(0, 0, 0, 0)
-        button_layout.addWidget(self.add_button)
-        button_layout.addWidget(self.delete_button)
-        button_layout.addWidget(self.clear_button)
-        button_layout.addStretch(1)
+        if self.controls:
+            button_layout = QHBoxLayout()
+            button_layout.setContentsMargins(0, 0, 0, 0)
+            for control_name, label in (
+                ('add', 'Add'),
+                ('delete', 'Delete'),
+                ('clear', 'Clear'),
+            ):
+                if control_name not in self.controls:
+                    continue
+                button = QToolButton(self)
+                button.setText(label)
+                setattr(self, control_name + '_button', button)
+                button_layout.addWidget(button)
+            button_layout.addStretch(1)
 
         layout = QVBoxLayout(self)
         layout.setContentsMargins(0, 0, 0, 0)
         layout.addWidget(self.queue_view)
-        layout.addLayout(button_layout)
+        if button_layout is not None:
+            layout.addLayout(button_layout)
 
-        self.add_button.clicked.connect(self.prompt_for_files)
-        self.delete_button.clicked.connect(self.remove_selected)
-        self.clear_button.clicked.connect(self.clear)
+        if self.add_button is not None:
+            self.add_button.clicked.connect(self.prompt_for_files)
+        if self.delete_button is not None:
+            self.delete_button.clicked.connect(self.remove_selected)
+        if self.clear_button is not None:
+            self.clear_button.clicked.connect(self.clear)
         self.queue_view.deleteRequested.connect(self.remove_selected)
         self.queue_view.filesDropped.connect(self.add_files)
         self.queue_model.rowsInserted.connect(self._on_queue_changed)
@@ -286,8 +299,10 @@ class ShotQueueWidget(QWidget):
         row_count = self.queue_model.rowCount()
         selected_rows = self.selected_rows()
         has_selection = bool(selected_rows)
-        self.delete_button.setEnabled(has_selection)
-        self.clear_button.setEnabled(bool(row_count))
+        if self.delete_button is not None:
+            self.delete_button.setEnabled(has_selection)
+        if self.clear_button is not None:
+            self.clear_button.setEnabled(bool(row_count))
 
     def _select_rows(self, rows):
         rows = list(rows)

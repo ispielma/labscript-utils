@@ -122,6 +122,7 @@ class LabConfig(TomlConfigParser):
         if path.suffix.lower() == '.toml':
             self.read_toml(path)
             return
+        # LEGACY INI COMPATIBILITY. DEPRECATED CODE, WILL BE REMOVED.
         if path.suffix.lower() == '.ini':
             msg = """INI labconfig support is deprecated and slated for removal soon.
                 Convert this file to TOML."""
@@ -135,16 +136,18 @@ class LabConfig(TomlConfigParser):
 def _resolve_appconfig_load_path(filename):
     path = Path(filename)
     suffix = path.suffix.lower()
+    # LEGACY INI COMPATIBILITY. DEPRECATED CODE, WILL BE REMOVED.
     if suffix == '.ini':
-        if path.exists():
-            return path
         toml_path = path.with_suffix('.toml')
         if toml_path.exists():
             return toml_path
+        if path.exists():
+            return path
         return path
     if suffix == '.toml':
         if path.exists():
             return path
+        # LEGACY INI COMPATIBILITY. DEPRECATED CODE, WILL BE REMOVED.
         legacy_path = path.with_suffix('.ini')
         if legacy_path.exists():
             return legacy_path
@@ -152,6 +155,7 @@ def _resolve_appconfig_load_path(filename):
     toml_path = path.with_suffix('.toml')
     if toml_path.exists():
         return toml_path
+    # LEGACY INI COMPATIBILITY. DEPRECATED CODE, WILL BE REMOVED.
     legacy_path = path.with_suffix('.ini')
     if legacy_path.exists():
         return legacy_path
@@ -160,6 +164,23 @@ def _resolve_appconfig_load_path(filename):
 
 def _resolve_appconfig_save_path(filename):
     return Path(filename).with_suffix('.toml')
+
+# LEGACY INI COMPATIBILITY. DEPRECATED CODE, WILL BE REMOVED.
+def backup_legacy_config(path):
+    """Rename a migrated legacy config file to ``.old`` without clobbering backups."""
+    path = Path(path)
+    if not path.exists():
+        return None
+    backup_path = Path(str(path) + '.old')
+    index = 1
+    while backup_path.exists():
+        backup_path = Path(str(path) + '.old' + str(index))
+        index += 1
+    try:
+        path.rename(backup_path)
+    except OSError:
+        return None
+    return backup_path
 
 
 def _to_toml_compatible(value, location='value'):
@@ -181,7 +202,7 @@ def _to_toml_compatible(value, location='value'):
     msg = f"{location} value {value!r} is not representable in TOML app config"
     raise TypeError(msg)
 
-
+# LEGACY INI COMPATIBILITY. DEPRECATED CODE, WILL BE REMOVED.
 def _load_legacy_appconfig_value(value):
     """Temporary legacy INI app-config decoder. Slated for removal soon."""
     if not isinstance(value, str):
@@ -211,12 +232,14 @@ def load_appconfig(filename, return_save_path=False):
     """Load a TOML app config, or a legacy INI app config if required.
 
     If a legacy INI file is loaded, a sibling TOML file is immediately written and can be
-    returned as the canonical save path via ``return_save_path=True``. Legacy INI support
-    here is temporary and slated for removal soon.
+    returned as the canonical save path via ``return_save_path=True``. After successful
+    conversion, the legacy INI file is moved aside to ``.old`` so future loads prefer the
+    canonical TOML file. Legacy INI support here is temporary and slated for removal soon.
     """
     requested_path = Path(filename)
     filename = _resolve_appconfig_load_path(filename)
     save_path = _resolve_appconfig_save_path(requested_path)
+    # LEGACY INI COMPATIBILITY. DEPRECATED CODE, WILL BE REMOVED.
     if filename.suffix.lower() == '.ini':
         c = configparser.ConfigParser(interpolation=None)
         c.optionxform = str
@@ -231,6 +254,7 @@ def load_appconfig(filename, return_save_path=False):
         }
         if filename.exists():
             save_path = Path(save_appconfig(save_path, data))
+            backup_legacy_config(filename)
     else:
         raw = load_toml_file(filename) if filename.exists() else {}
         data = {
