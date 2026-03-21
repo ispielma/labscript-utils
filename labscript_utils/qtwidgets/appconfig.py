@@ -14,7 +14,7 @@
 import os
 from pathlib import Path
 from qtutils import inmain_decorator
-from qtutils.qt import QtWidgets
+from qtutils.qt import QtCore, QtWidgets
 
 
 def normalize_dialog_path(selection, suffix=None):
@@ -109,11 +109,19 @@ class AppConfigActions:
         self.error_dialog = error_dialog
         self.last_save_config_file = None
         self.last_save_data = None
+        self.initial_save_data = None
         self.save_as_action.setEnabled(True)
+        self.revert_action.setEnabled(False)
         save_action.triggered.connect(self.on_save_configuration_triggered)
         save_as_action.triggered.connect(self.on_save_configuration_as_triggered)
         load_action.triggered.connect(self.on_load_configuration_triggered)
         revert_action.triggered.connect(self.on_revert_configuration_triggered)
+        QtCore.QTimer.singleShot(0, self.capture_initial_state)
+
+    def capture_initial_state(self):
+        """Record the post-startup UI state as the initial clean baseline."""
+        if self.initial_save_data is None and self.last_save_data is None:
+            self.initial_save_data = self.get_save_data()
 
     def mark_clean(self, save_file, save_data):
         """Record the last saved configuration path and data."""
@@ -123,10 +131,21 @@ class AppConfigActions:
         self.save_as_action.setEnabled(True)
         self.revert_action.setEnabled(True)
 
+    def current_save_target(self):
+        """Return the current config save target, falling back to the default path."""
+        return self.last_save_config_file or self.default_save_path_getter()
+
+    def is_dirty(self):
+        """Return whether the current UI state differs from the active clean baseline."""
+        clean_data = self.last_save_data
+        if clean_data is None:
+            self.capture_initial_state()
+            clean_data = self.initial_save_data
+        return self.get_save_data() != clean_data
+
     def prompt_to_save_if_dirty(self, title, message):
         """Return whether a pending action should continue after a save prompt."""
-        save_data = self.get_save_data()
-        if self.last_save_data is None or save_data == self.last_save_data:
+        if not self.is_dirty():
             return True
         reply = QtWidgets.QMessageBox.question(self.parent, title, message,
                                                QtWidgets.QMessageBox.Yes
@@ -135,31 +154,31 @@ class AppConfigActions:
         if reply == QtWidgets.QMessageBox.Cancel:
             return False
         if reply == QtWidgets.QMessageBox.Yes:
-            self.save_configuration(self.last_save_config_file)
+            return self.on_save_configuration_triggered()
         return True
 
     def on_save_configuration_triggered(self):
-        """Save to the current target or fall back to Save As."""
-        if self.last_save_config_file is None:
-            self.on_save_configuration_as_triggered()
-        else:
-            self.save_configuration(self.last_save_config_file)
+        """Save to the current configuration target."""
+        self.save_configuration(self.current_save_target())
+        return True
 
     def on_save_configuration_as_triggered(self):
         """Prompt for a save target and save the current configuration."""
         save_file = select_config_file(self.parent,
                                        'Select  file to save current %s' % self.config_name,
-                                       self.last_save_config_file or self.default_save_path_getter(),
+                                       self.current_save_target(),
                                        "Config files (*.toml)", save=True)
         if save_file is not None:
             self.save_configuration(save_file)
+            return True
+        return False
 
     def on_load_configuration_triggered(self):
         """Prompt for a configuration file and load it."""
         if not self.prompt_to_save_if_dirty(
             'Load configuration',
             "Current configuration has changed: save config file '%s'?"
-            % self.last_save_config_file):
+            % self.current_save_target()):
             return
         filename = select_config_file(self.parent,
                                       'Select %s file to load' % self.config_name,
@@ -170,8 +189,10 @@ class AppConfigActions:
 
     def on_revert_configuration_triggered(self):
         """Prompt to revert to the last saved configuration."""
-        save_data = self.get_save_data()
-        if self.last_save_data is None or save_data == self.last_save_data:
+        if self.last_save_data is None:
+            self.error_dialog('no saved configuration to revert to')
+            return
+        if not self.is_dirty():
             self.error_dialog('no changes to revert')
             return
         reply = QtWidgets.QMessageBox.question(self.parent, 'Load configuration',

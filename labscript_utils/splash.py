@@ -17,6 +17,7 @@ from labscript_utils import dedent
 
 try:
     from qtutils.qt import QtWidgets, QtCore, QtGui, QT_ENV
+    from qtutils.qt.QtCore import pyqtSignal as Signal
 except ImportError as e:
     if 'DLL load failed' in str(e):
         msg = """Failed to load Qt DLL. This can be caused by application shortcuts
@@ -69,7 +70,7 @@ def get_qapplication(argv=None):
 class FirstPaintMainWindow(QtWidgets.QMainWindow):
     """A ``QMainWindow`` that emits ``firstPaint`` after its first paint event."""
 
-    firstPaint = QtCore.pyqtSignal()
+    firstPaint = Signal()
 
     def __init__(self, *args, **kwargs):
         super().__init__(*args, **kwargs)
