@@ -309,6 +309,7 @@ def launch_from_config(config, filepath, program_key, arguments_key,
         return False
     
     if not '{file}' in arguments:
+        arguments = list(arguments) # force a copy here.
         arguments.insert(0, '{file}')
 
     arguments = [filepath if argument == '{file}' else argument for argument in arguments]
