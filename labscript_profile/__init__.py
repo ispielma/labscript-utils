@@ -1,6 +1,7 @@
 import site
 import sys
 import os
+import shlex
 import configparser
 from ast import literal_eval
 from pathlib import Path
@@ -138,6 +139,13 @@ def _coerce_legacy_value(value, template_value):
         return [_coerce_legacy_value(item, template_item) for item in parsed]
     return value
 
+
+# LEGACY INI COMPATIBILITY. DEPRECATED CODE, WILL BE REMOVED.
+def _convert_legacy_program_arguments(value):
+    if not isinstance(value, str):
+        return value
+    return shlex.split(value)
+
 # LEGACY INI COMPATIBILITY. DEPRECATED CODE, WILL BE REMOVED.
 def _convert_legacy_labconfig(legacy_path, toml_path):
     """Temporary legacy migration path from INI to TOML. Slated for removal soon."""
@@ -160,6 +168,12 @@ def _convert_legacy_labconfig(legacy_path, toml_path):
         if isinstance(autoload, str) and autoload.lower().endswith('.ini'):
             section_items['autoload_config_file'] = autoload[:-4] + '.toml'
         section_template = template_data.get(canonical_section, {})
+        if canonical_section == 'programs':
+            for key, value in list(section_items.items()):
+                template_value = section_template.get(key)
+                if key.endswith('_arguments') and isinstance(template_value, list):
+                    # LEGACY INI COMPATIBILITY. DEPRECATED CODE, WILL BE REMOVED.
+                    section_items[key] = _convert_legacy_program_arguments(value)
         data[canonical_section] = {
             key: _coerce_legacy_value(value, section_template.get(key))
             for key, value in section_items.items()

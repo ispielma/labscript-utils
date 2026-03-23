@@ -58,7 +58,7 @@ def make_labconfig_file(apparatus_name = None):
         config['programs']['text_editor'] = 'gedit'
     elif sys.platform == 'darwin':
         config['programs']['text_editor'] = 'open'
-        config['programs']['text_editor_arguments'] = '-a TextEdit {file}'
+        config['programs']['text_editor_arguments'] = ['-a', 'TextEdit', '{file}']
     if sys.platform != 'win32':
         config['programs']['hdf5_viewer'] = 'hdfview'
         config['default']['shared_drive'] = '$HOME/labscript_shared'

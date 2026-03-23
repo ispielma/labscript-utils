@@ -12,7 +12,6 @@
 #####################################################################
 import configparser
 import os
-import shlex
 import subprocess
 import warnings
 from ast import literal_eval
@@ -299,8 +298,16 @@ def launch_from_config(config, filepath, program_key, arguments_key,
         error_dialog(missing_program_message)
         return False
     arguments = config.get('programs', arguments_key)
+    if not isinstance(arguments, list) or not all(
+        isinstance(argument, str) for argument in arguments
+    ):
+        error_dialog(
+            "Invalid %s in %s. Expected a TOML list of string arguments."
+            % (arguments_key, config.config_path)
+        )
+        return False
     has_filepath_placeholder = '{file}' in arguments
-    arguments = shlex.split(arguments.replace('{file}', filepath))
+    arguments = [filepath if argument == '{file}' else argument for argument in arguments]
     if not has_filepath_placeholder:
         arguments.insert(0, filepath)
     try:
