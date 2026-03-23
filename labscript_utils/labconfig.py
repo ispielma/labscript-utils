@@ -297,6 +297,7 @@ def launch_from_config(config, filepath, program_key, arguments_key,
     if not program_path:
         error_dialog(missing_program_message)
         return False
+    
     arguments = config.get('programs', arguments_key)
     if not isinstance(arguments, list) or not all(
         isinstance(argument, str) for argument in arguments
@@ -306,10 +307,12 @@ def launch_from_config(config, filepath, program_key, arguments_key,
             % (arguments_key, config.config_path)
         )
         return False
-    has_filepath_placeholder = '{file}' in arguments
+    
+    if not '{file}' in arguments:
+        arguments.insert(0, '{file}')
+
     arguments = [filepath if argument == '{file}' else argument for argument in arguments]
-    if not has_filepath_placeholder:
-        arguments.insert(0, filepath)
+
     try:
         subprocess.Popen([program_path] + arguments)
     except Exception as exc:
