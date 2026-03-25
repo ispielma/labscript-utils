@@ -4,6 +4,7 @@ import shutil
 import configparser
 from pathlib import Path
 from subprocess import check_output
+import h5py
 from labscript_profile import LABSCRIPT_SUITE_PROFILE, default_labconfig_path
 import argparse
 
@@ -84,8 +85,9 @@ def compile_connection_table():
     output_h5_path = os.path.expandvars(config['paths']['connection_table_h5'])
     # create output directory, if needed
     Path(output_h5_path).parent.mkdir(parents=True, exist_ok=True)
-    # compile the h5 file
-    runmanager.new_globals_file(output_h5_path)
+    # Create a fresh HDF5 target for the compile output.
+    with h5py.File(output_h5_path, 'w'):
+        pass
 
     def dummy_callback(success):
         pass
