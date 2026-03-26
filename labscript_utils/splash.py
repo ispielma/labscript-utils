@@ -41,10 +41,15 @@ if QT_ENV == 'PyQt5':
 
 def configure_qapplication(qapplication):
     """Apply labscript-wide QApplication configuration."""
-    if qapplication.property('_labscript_qapplication_configured'):
-        return qapplication
     qapplication.setAttribute(Qt.AA_DontShowIconsInMenus, False)
     if sys.platform == 'darwin':
+        icon_path = qapplication.property('_labscript_icon_path')
+        if icon_path:
+            icon = QtGui.QIcon(icon_path)
+            if not icon.isNull():
+                qapplication.setWindowIcon(icon)
+        if qapplication.property('_labscript_qapplication_configured'):
+            return qapplication
         # Native macOS widget styling makes many Qt controls look inconsistent
         # with the rest of the suite. Use Qt's own style, but preserve the
         # current palette so dark/light appearance still follows the active
@@ -54,6 +59,8 @@ def configure_qapplication(qapplication):
         if style is not None:
             qapplication.setStyle(style)
             qapplication.setPalette(palette)
+    elif qapplication.property('_labscript_qapplication_configured'):
+        return qapplication
     qapplication.setProperty('_labscript_qapplication_configured', True)
     return qapplication
 
@@ -63,8 +70,6 @@ def get_qapplication(argv=None):
     if qapplication is None:
         qapplication = QtWidgets.QApplication(sys.argv if argv is None else argv)
     return configure_qapplication(qapplication)
-
-
 class Splash(QtWidgets.QFrame):
     w = 250
     h = 230
@@ -77,29 +82,31 @@ class Splash(QtWidgets.QFrame):
 
     def __init__(self, imagepath):
         self.qapplication = get_qapplication()
+        self.qapplication.setProperty('_labscript_icon_path', imagepath)
+        configure_qapplication(self.qapplication)
         super().__init__()
         self.icon = QtGui.QPixmap()
         self.icon.load(imagepath)
         if self.icon.isNull():
             raise ValueError("Invalid image file: {}.\n".format(imagepath))
         self.icon = self.icon.scaled(
-            self.imwidth, self.imheight, Qt.KeepAspectRatio, Qt.SmoothTransformation
+            self.imwidth, self.imheight, Qt.AspectRatioMode.KeepAspectRatio, Qt.TransformationMode.SmoothTransformation
         )
         self.text = 'Loading'
-        self.setWindowFlags(Qt.SplashScreen)
+        self.setWindowFlags(Qt.WindowType.SplashScreen)
         self.setWindowOpacity(self.alpha)
         self.label = QtWidgets.QLabel(self.text)
         self.setStyleSheet(f"color: {self.FG}; background-color: {self.BG}; font-size: 10pt")
         # Frame not necessary on macos, and looks ugly.
         if sys.platform != 'darwin':
-            self.setFrameShape(QtWidgets.QFrame.StyledPanel)
+            self.setFrameShape(QtWidgets.QFrame.Shape.StyledPanel)
         self.label.setWordWrap(True)
-        self.label.setAlignment(Qt.AlignCenter)
+        self.label.setAlignment(Qt.AlignmentFlag.AlignCenter)
         self.resize(self.w, self.h)
 
         image_label = QtWidgets.QLabel()
         image_label.setPixmap(self.icon)
-        image_label.setAlignment(Qt.AlignCenter)
+        image_label.setAlignment(Qt.AlignmentFlag.AlignCenter)
 
         layout = QtWidgets.QVBoxLayout(self)
         layout.addWidget(image_label)
@@ -116,7 +123,7 @@ class Splash(QtWidgets.QFrame):
         self.label.setText(text)
         self._paint_pending = True
         while self._paint_pending:
-            QtCore.QCoreApplication.processEvents(QtCore.QEventLoop.AllEvents)
+            QtCore.QCoreApplication.processEvents(QtCore.QEventLoop.ProcessEventsFlag.AllEvents)
             QtCore.QCoreApplication.sendPostedEvents()
 
 
