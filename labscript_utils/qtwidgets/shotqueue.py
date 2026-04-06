@@ -64,6 +64,17 @@ class ShotQueueTreeView(QTreeView):
             return
         QTreeView.keyPressEvent(self, event)
 
+    def contextMenuEvent(self, event):
+        menu = QMenu(self)
+        delete_action = menu.addAction('Delete selected rows')
+        delete_action.setEnabled(bool(self.selectionModel().selectedRows()))
+        chosen_action = menu.exec_(event.globalPos())
+        if chosen_action is delete_action:
+            self.deleteRequested.emit()
+            event.accept()
+            return
+        QTreeView.contextMenuEvent(self, event)
+
     def dragEnterEvent(self, event):
         if self._event_has_acceptable_urls(event):
             event.setDropAction(Qt.CopyAction)
@@ -136,16 +147,10 @@ class ShotQueueWidget(QWidget):
 
         self.add_button = QToolButton(self)
         self.add_button.setText('Add')
-        self.delete_button = QToolButton(self)
-        self.delete_button.setText('Delete')
-        self.clear_button = QToolButton(self)
-        self.clear_button.setText('Clear')
 
         button_layout = QHBoxLayout()
         button_layout.setContentsMargins(0, 0, 0, 0)
         button_layout.addWidget(self.add_button)
-        button_layout.addWidget(self.delete_button)
-        button_layout.addWidget(self.clear_button)
         button_layout.addStretch(1)
 
         layout = QVBoxLayout(self)
@@ -154,8 +159,6 @@ class ShotQueueWidget(QWidget):
         layout.addLayout(button_layout)
 
         self.add_button.clicked.connect(self.prompt_for_files)
-        self.delete_button.clicked.connect(self.remove_selected)
-        self.clear_button.clicked.connect(self.clear)
         self.queue_view.deleteRequested.connect(self.remove_selected)
         self.queue_view.filesDropped.connect(self.add_files)
         self.queue_model.rowsInserted.connect(self._on_queue_changed)
@@ -320,11 +323,7 @@ class ShotQueueWidget(QWidget):
         self.selectionChanged.emit(self.selected_files())
 
     def _update_button_states(self):
-        row_count = self.queue_model.rowCount()
-        selected_rows = self.selected_rows()
-        has_selection = bool(selected_rows)
-        self.delete_button.setEnabled(has_selection)
-        self.clear_button.setEnabled(bool(row_count))
+        pass
 
     def _select_rows(self, rows):
         rows = list(rows)
