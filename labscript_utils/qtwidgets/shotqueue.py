@@ -133,6 +133,9 @@ class ShotQueueWidget(QWidget):
         column_title='Filepath',
         column_titles=None,
         path_column=FILEPATH_COLUMN,
+        connect_add_button=True,
+        connect_delete_requested=True,
+        connect_files_dropped=True,
     ):
         QWidget.__init__(self, parent)
         self.accepted_extensions = _normalise_extensions(accepted_extensions)
@@ -174,9 +177,12 @@ class ShotQueueWidget(QWidget):
         layout.addWidget(self.queue_view)
         layout.addLayout(button_layout)
 
-        self.add_button.clicked.connect(self.prompt_for_files)
-        self.queue_view.deleteRequested.connect(self.remove_selected)
-        self.queue_view.filesDropped.connect(self.add_files)
+        if connect_add_button:
+            self.add_button.clicked.connect(self.prompt_for_files)
+        if connect_delete_requested:
+            self.queue_view.deleteRequested.connect(self.remove_selected)
+        if connect_files_dropped:
+            self.queue_view.filesDropped.connect(self.add_files)
         self.queue_model.rowsInserted.connect(self._on_queue_changed)
         self.queue_model.rowsRemoved.connect(self._on_queue_changed)
         self.queue_model.modelReset.connect(self._on_queue_changed)
@@ -254,41 +260,6 @@ class ShotQueueWidget(QWidget):
     def clear(self):
         if self.queue_model.rowCount():
             self.queue_model.removeRows(0, self.queue_model.rowCount())
-
-    def move_up(self):
-        selected_rows = self.selected_rows()
-        if not selected_rows or selected_rows[0] == 0:
-            return
-        for row_index in selected_rows:
-            self.queue_model.insertRow(row_index - 1, self.queue_model.takeRow(row_index))
-        self._select_rows([row - 1 for row in selected_rows])
-
-    def move_down(self):
-        selected_rows = self.selected_rows()
-        if not selected_rows or selected_rows[-1] == self.queue_model.rowCount() - 1:
-            return
-        for row_index in reversed(selected_rows):
-            self.queue_model.insertRow(row_index + 1, self.queue_model.takeRow(row_index))
-        self._select_rows([row + 1 for row in selected_rows])
-
-    def move_top(self):
-        selected_rows = self.selected_rows()
-        if not selected_rows or selected_rows[0] == 0:
-            return
-        rows = [self.queue_model.takeRow(row_index) for row_index in reversed(selected_rows)]
-        for offset, row_items in enumerate(reversed(rows)):
-            self.queue_model.insertRow(offset, row_items)
-        self._select_rows(range(len(selected_rows)))
-
-    def move_bottom(self):
-        selected_rows = self.selected_rows()
-        if not selected_rows or selected_rows[-1] == self.queue_model.rowCount() - 1:
-            return
-        rows = [self.queue_model.takeRow(row_index) for row_index in reversed(selected_rows)]
-        start_row = self.queue_model.rowCount()
-        for row_items in reversed(rows):
-            self.queue_model.appendRow(row_items)
-        self._select_rows(range(start_row, self.queue_model.rowCount()))
 
     def is_in_queue(self, path):
         path = os.path.abspath(str(path))
