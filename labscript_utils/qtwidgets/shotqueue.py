@@ -132,6 +132,7 @@ class ShotQueueWidget(QWidget):
 
         self.queue_view = ShotQueueTreeView(self, accepted_extensions=self.accepted_extensions)
         self.queue_view.setModel(self.queue_model)
+        self.queue_view.setVerticalScrollBarPolicy(Qt.ScrollBarAlwaysOn)
 
         self.add_button = QToolButton(self)
         self.add_button.setText('Add')
@@ -139,14 +140,6 @@ class ShotQueueWidget(QWidget):
         self.delete_button.setText('Delete')
         self.clear_button = QToolButton(self)
         self.clear_button.setText('Clear')
-        self.move_top_button = QToolButton(self)
-        self.move_top_button.setText('Top')
-        self.move_up_button = QToolButton(self)
-        self.move_up_button.setText('Up')
-        self.move_down_button = QToolButton(self)
-        self.move_down_button.setText('Down')
-        self.move_bottom_button = QToolButton(self)
-        self.move_bottom_button.setText('Bottom')
 
         button_layout = QHBoxLayout()
         button_layout.setContentsMargins(0, 0, 0, 0)
@@ -154,10 +147,6 @@ class ShotQueueWidget(QWidget):
         button_layout.addWidget(self.delete_button)
         button_layout.addWidget(self.clear_button)
         button_layout.addStretch(1)
-        button_layout.addWidget(self.move_top_button)
-        button_layout.addWidget(self.move_up_button)
-        button_layout.addWidget(self.move_down_button)
-        button_layout.addWidget(self.move_bottom_button)
 
         layout = QVBoxLayout(self)
         layout.setContentsMargins(0, 0, 0, 0)
@@ -167,10 +156,6 @@ class ShotQueueWidget(QWidget):
         self.add_button.clicked.connect(self.prompt_for_files)
         self.delete_button.clicked.connect(self.remove_selected)
         self.clear_button.clicked.connect(self.clear)
-        self.move_top_button.clicked.connect(self.move_top)
-        self.move_up_button.clicked.connect(self.move_up)
-        self.move_down_button.clicked.connect(self.move_down)
-        self.move_bottom_button.clicked.connect(self.move_bottom)
         self.queue_view.deleteRequested.connect(self.remove_selected)
         self.queue_view.filesDropped.connect(self.add_files)
         self.queue_model.rowsInserted.connect(self._on_queue_changed)
@@ -340,10 +325,6 @@ class ShotQueueWidget(QWidget):
         has_selection = bool(selected_rows)
         self.delete_button.setEnabled(has_selection)
         self.clear_button.setEnabled(bool(row_count))
-        self.move_top_button.setEnabled(has_selection and selected_rows[0] > 0)
-        self.move_up_button.setEnabled(has_selection and selected_rows[0] > 0)
-        self.move_bottom_button.setEnabled(has_selection and selected_rows[-1] < row_count - 1)
-        self.move_down_button.setEnabled(has_selection and selected_rows[-1] < row_count - 1)
 
     def _select_rows(self, rows):
         rows = list(rows)
