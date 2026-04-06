@@ -118,7 +118,7 @@ class ShotQueueTreeView(QTreeView):
         return os.path.isfile(path) and path.lower().endswith(self._accepted_extensions)
 
 class ShotQueueWidget(QWidget):
-    """Reusable single-column shot queue editor widget."""
+    """Reusable shot queue editor widget."""
 
     queueChanged = Signal()
     selectionChanged = Signal(list)
@@ -131,19 +131,31 @@ class ShotQueueWidget(QWidget):
         file_dialog_filter='Shot files (*.h5 *.hdf5)',
         allow_duplicates=False,
         column_title='Filepath',
+        column_titles=None,
     ):
         QWidget.__init__(self, parent)
         self.accepted_extensions = _normalise_extensions(accepted_extensions)
         self.file_dialog_filter = file_dialog_filter
         self.allow_duplicates = allow_duplicates
         self.last_opened_shots_folder = ''
+        if column_titles is None:
+            column_titles = [column_title]
+        self.column_titles = list(column_titles)
 
         self.queue_model = QStandardItemModel(self)
-        self.queue_model.setHorizontalHeaderItem(FILEPATH_COLUMN, QStandardItem(column_title))
+        self.queue_model.setColumnCount(len(self.column_titles))
+        for column, title in enumerate(self.column_titles):
+            self.queue_model.setHorizontalHeaderItem(column, QStandardItem(title))
 
         self.queue_view = ShotQueueTreeView(self, accepted_extensions=self.accepted_extensions)
         self.queue_view.setModel(self.queue_model)
         self.queue_view.setVerticalScrollBarPolicy(Qt.ScrollBarAlwaysOn)
+        self.queue_view.header().setStretchLastSection(False)
+        self.queue_view.header().setSectionResizeMode(FILEPATH_COLUMN, QHeaderView.Stretch)
+        for column in range(1, len(self.column_titles)):
+            self.queue_view.header().setSectionResizeMode(
+                column, QHeaderView.ResizeToContents
+            )
 
         self.add_button = QToolButton(self)
         self.add_button.setText('Add')
@@ -170,12 +182,12 @@ class ShotQueueWidget(QWidget):
 
     def files(self):
         return [
-            self.queue_model.item(row, FILEPATH_COLUMN).text()
+            self._queue_path_for_row(row)
             for row in range(self.queue_model.rowCount())
         ]
 
     def selected_files(self):
-        return [self.queue_model.item(row, FILEPATH_COLUMN).text() for row in self.selected_rows()]
+        return [self._queue_path_for_row(row) for row in self.selected_rows()]
 
     def selected_rows(self):
         return sorted(index.row() for index in self.queue_view.selectionModel().selectedRows())
@@ -186,8 +198,7 @@ class ShotQueueWidget(QWidget):
         path_lookup = {os.path.abspath(str(path)) for path in paths}
         rows = []
         for row in range(self.queue_model.rowCount()):
-            item = self.queue_model.item(row, FILEPATH_COLUMN)
-            if item.text() in path_lookup:
+            if self._queue_path_for_row(row) in path_lookup:
                 rows.append(row)
         self._select_rows(rows)
 
@@ -277,7 +288,10 @@ class ShotQueueWidget(QWidget):
 
     def is_in_queue(self, path):
         path = os.path.abspath(str(path))
-        return bool(self.queue_model.findItems(path, column=FILEPATH_COLUMN))
+        return any(
+            self._queue_path_for_row(row) == path
+            for row in range(self.queue_model.rowCount())
+        )
 
     def get_save_data(self):
         return {
@@ -289,11 +303,70 @@ class ShotQueueWidget(QWidget):
         self.last_opened_shots_folder = data.get('last_opened_shots_folder', '')
         self.set_files(data.get('files_queued', []))
 
+    def set_row_infos(self, row_infos):
+        self.queue_model.removeRows(0, self.queue_model.rowCount())
+        if not row_infos:
+            return
+        for row_info in row_infos:
+            self.queue_model.appendRow(self._create_row_from_info(row_info))
+
     def _create_row(self, path):
         item = QStandardItem(path)
         item.setToolTip(path)
         item.setEditable(False)
-        return [item]
+        item.setData(path, Qt.UserRole)
+        return [item] + self._create_padding_items(self.queue_model.columnCount() - 1)
+
+    def _create_row_from_info(self, row_info):
+        if not isinstance(row_info, dict):
+            return self._create_row(str(row_info))
+        path = os.path.abspath(str(row_info['path']))
+        label = row_info.get('label', os.path.basename(path))
+        tooltip = row_info.get('tooltip', path)
+        columns = list(row_info.get('columns', []))
+
+        item = QStandardItem(label)
+        item.setEditable(False)
+        item.setToolTip(tooltip)
+        item.setData(path, Qt.UserRole)
+        row_items = [item]
+
+        for column_info in columns[: self.queue_model.columnCount() - 1]:
+            if isinstance(column_info, dict):
+                text = str(column_info.get('text', ''))
+                column_tooltip = column_info.get('tooltip', '')
+                alignment = column_info.get(
+                    'alignment', Qt.AlignLeft | Qt.AlignVCenter
+                )
+            else:
+                text = str(column_info)
+                column_tooltip = ''
+                alignment = Qt.AlignLeft | Qt.AlignVCenter
+            column_item = QStandardItem(text)
+            column_item.setEditable(False)
+            column_item.setToolTip(column_tooltip)
+            column_item.setTextAlignment(alignment)
+            row_items.append(column_item)
+
+        row_items.extend(
+            self._create_padding_items(self.queue_model.columnCount() - len(row_items))
+        )
+        return row_items
+
+    def _create_padding_items(self, count):
+        items = []
+        for _ in range(max(0, count)):
+            item = QStandardItem('')
+            item.setEditable(False)
+            items.append(item)
+        return items
+
+    def _queue_path_for_row(self, row):
+        item = self.queue_model.item(row, FILEPATH_COLUMN)
+        path = item.data(Qt.UserRole)
+        if path is None:
+            path = item.text()
+        return os.path.abspath(str(path))
 
     def _prepare_paths(self, paths):
         if isinstance(paths, str):
