@@ -151,7 +151,7 @@ class ShotQueueWidget(QWidget):
 
         self.queue_view = ShotQueueTreeView(self, accepted_extensions=self.accepted_extensions)
         self.queue_view.setModel(self.queue_model)
-        self.queue_view.setVerticalScrollBarPolicy(Qt.ScrollBarAlwaysOff)
+        self.queue_view.setVerticalScrollBarPolicy(Qt.ScrollBarAlwaysOn)
         self.queue_view.header().setStretchLastSection(False)
         for column in range(len(self.column_titles)):
             resize_mode = (
@@ -160,7 +160,9 @@ class ShotQueueWidget(QWidget):
                 else QHeaderView.ResizeToContents
             )
             self.queue_view.header().setSectionResizeMode(column, resize_mode)
-        self.queue_scrollbar = QScrollBar(Qt.Vertical, self)
+        self.scrollbar_corner = QWidget(self.queue_view)
+        self.scrollbar_corner.setFixedWidth(self.queue_view.verticalScrollBar().sizeHint().width())
+        self.queue_view.setCornerWidget(self.scrollbar_corner)
 
         self.add_button = QToolButton(self)
         self.add_button.setText('Add')
@@ -170,15 +172,9 @@ class ShotQueueWidget(QWidget):
         button_layout.addWidget(self.add_button)
         button_layout.addStretch(1)
 
-        queue_layout = QHBoxLayout()
-        queue_layout.setContentsMargins(0, 0, 0, 0)
-        queue_layout.setSpacing(0)
-        queue_layout.addWidget(self.queue_view)
-        queue_layout.addWidget(self.queue_scrollbar)
-
         layout = QVBoxLayout(self)
         layout.setContentsMargins(0, 0, 0, 0)
-        layout.addLayout(queue_layout)
+        layout.addWidget(self.queue_view)
         layout.addLayout(button_layout)
 
         self.add_button.clicked.connect(self.prompt_for_files)
@@ -188,12 +184,7 @@ class ShotQueueWidget(QWidget):
         self.queue_model.rowsRemoved.connect(self._on_queue_changed)
         self.queue_model.modelReset.connect(self._on_queue_changed)
         self.queue_view.selectionModel().selectionChanged.connect(self._on_selection_changed)
-        self.queue_view.verticalScrollBar().rangeChanged.connect(self._sync_vertical_scrollbar)
-        self.queue_view.verticalScrollBar().valueChanged.connect(self.queue_scrollbar.setValue)
-        self.queue_scrollbar.valueChanged.connect(self.queue_view.verticalScrollBar().setValue)
 
-        self._sync_vertical_scrollbar()
-        self._resize_auxiliary_columns()
         self._update_button_states()
 
     def files(self):
@@ -228,7 +219,6 @@ class ShotQueueWidget(QWidget):
             return []
         for path in paths:
             self.queue_model.appendRow(self._create_row(path))
-        self._resize_auxiliary_columns()
         self.filesAdded.emit(paths)
         return paths
 
@@ -237,7 +227,6 @@ class ShotQueueWidget(QWidget):
         if not paths:
             return []
         self.queue_model.insertRow(0, self._create_row(paths[0]))
-        self._resize_auxiliary_columns()
         self.filesAdded.emit(paths)
         self._select_rows([0])
         return paths
@@ -324,11 +313,9 @@ class ShotQueueWidget(QWidget):
     def set_row_infos(self, row_infos):
         self.queue_model.removeRows(0, self.queue_model.rowCount())
         if not row_infos:
-            self._resize_auxiliary_columns()
             return
         for row_info in row_infos:
             self.queue_model.appendRow(self._create_row_from_info(row_info))
-        self._resize_auxiliary_columns()
 
     def _create_row(self, path):
         row_items = self._create_padding_items(self.queue_model.columnCount())
@@ -391,22 +378,6 @@ class ShotQueueWidget(QWidget):
             path = item.text()
         return os.path.abspath(str(path))
 
-    def _resize_auxiliary_columns(self):
-        header = self.queue_view.header()
-        for column, title in enumerate(self.column_titles):
-            if column == self.path_column:
-                continue
-            title_width = self.fontMetrics().horizontalAdvance(title) + 24
-            content_width = max(0, self.queue_view.sizeHintForColumn(column)) + 12
-            header.resizeSection(column, max(title_width, content_width))
-
-    def _sync_vertical_scrollbar(self, minimum=0, maximum=0):
-        tree_scrollbar = self.queue_view.verticalScrollBar()
-        self.queue_scrollbar.setRange(minimum, maximum)
-        self.queue_scrollbar.setPageStep(tree_scrollbar.pageStep())
-        self.queue_scrollbar.setSingleStep(tree_scrollbar.singleStep())
-        self.queue_scrollbar.setValue(tree_scrollbar.value())
-
     def _prepare_paths(self, paths):
         if isinstance(paths, str):
             paths = [paths]
@@ -427,9 +398,6 @@ class ShotQueueWidget(QWidget):
         return os.path.isfile(path) and path.lower().endswith(self.accepted_extensions)
 
     def _on_queue_changed(self, *args):
-        self._resize_auxiliary_columns()
-        tree_scrollbar = self.queue_view.verticalScrollBar()
-        self._sync_vertical_scrollbar(tree_scrollbar.minimum(), tree_scrollbar.maximum())
         self._update_button_states()
         self.queueChanged.emit()
 
