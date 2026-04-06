@@ -132,6 +132,7 @@ class ShotQueueWidget(QWidget):
         allow_duplicates=False,
         column_title='Filepath',
         column_titles=None,
+        path_column=FILEPATH_COLUMN,
     ):
         QWidget.__init__(self, parent)
         self.accepted_extensions = _normalise_extensions(accepted_extensions)
@@ -141,6 +142,7 @@ class ShotQueueWidget(QWidget):
         if column_titles is None:
             column_titles = [column_title]
         self.column_titles = list(column_titles)
+        self.path_column = int(path_column)
 
         self.queue_model = QStandardItemModel(self)
         self.queue_model.setColumnCount(len(self.column_titles))
@@ -149,13 +151,15 @@ class ShotQueueWidget(QWidget):
 
         self.queue_view = ShotQueueTreeView(self, accepted_extensions=self.accepted_extensions)
         self.queue_view.setModel(self.queue_model)
-        self.queue_view.setVerticalScrollBarPolicy(Qt.ScrollBarAlwaysOn)
+        self.queue_view.setVerticalScrollBarPolicy(Qt.ScrollBarAsNeeded)
         self.queue_view.header().setStretchLastSection(False)
-        self.queue_view.header().setSectionResizeMode(FILEPATH_COLUMN, QHeaderView.Stretch)
-        for column in range(1, len(self.column_titles)):
-            self.queue_view.header().setSectionResizeMode(
-                column, QHeaderView.ResizeToContents
+        for column in range(len(self.column_titles)):
+            resize_mode = (
+                QHeaderView.Stretch
+                if column == self.path_column
+                else QHeaderView.ResizeToContents
             )
+            self.queue_view.header().setSectionResizeMode(column, resize_mode)
 
         self.add_button = QToolButton(self)
         self.add_button.setText('Add')
@@ -311,11 +315,13 @@ class ShotQueueWidget(QWidget):
             self.queue_model.appendRow(self._create_row_from_info(row_info))
 
     def _create_row(self, path):
-        item = QStandardItem(path)
-        item.setToolTip(path)
-        item.setEditable(False)
-        item.setData(path, Qt.UserRole)
-        return [item] + self._create_padding_items(self.queue_model.columnCount() - 1)
+        row_items = self._create_padding_items(self.queue_model.columnCount())
+        row_items[self.path_column] = self._create_display_item(
+            path,
+            tooltip=path,
+            path=path,
+        )
+        return row_items
 
     def _create_row_from_info(self, row_info):
         if not isinstance(row_info, dict):
@@ -324,45 +330,46 @@ class ShotQueueWidget(QWidget):
         label = row_info.get('label', os.path.basename(path))
         tooltip = row_info.get('tooltip', path)
         columns = list(row_info.get('columns', []))
-
-        item = QStandardItem(label)
-        item.setEditable(False)
-        item.setToolTip(tooltip)
-        item.setData(path, Qt.UserRole)
-        row_items = [item]
-
-        for column_info in columns[: self.queue_model.columnCount() - 1]:
-            if isinstance(column_info, dict):
-                text = str(column_info.get('text', ''))
-                column_tooltip = column_info.get('tooltip', '')
-                alignment = column_info.get(
-                    'alignment', Qt.AlignLeft | Qt.AlignVCenter
-                )
-            else:
-                text = str(column_info)
-                column_tooltip = ''
-                alignment = Qt.AlignLeft | Qt.AlignVCenter
-            column_item = QStandardItem(text)
-            column_item.setEditable(False)
-            column_item.setToolTip(column_tooltip)
-            column_item.setTextAlignment(alignment)
-            row_items.append(column_item)
-
-        row_items.extend(
-            self._create_padding_items(self.queue_model.columnCount() - len(row_items))
+        row_items = self._create_padding_items(self.queue_model.columnCount())
+        row_items[self.path_column] = self._create_display_item(
+            label,
+            tooltip=tooltip,
+            path=path,
         )
+        extra_columns = [i for i in range(self.queue_model.columnCount()) if i != self.path_column]
+        for column_index, column_info in zip(extra_columns, columns):
+            row_items[column_index] = self._create_display_item_from_info(column_info)
         return row_items
 
     def _create_padding_items(self, count):
         items = []
         for _ in range(max(0, count)):
-            item = QStandardItem('')
-            item.setEditable(False)
-            items.append(item)
+            items.append(self._create_display_item(''))
         return items
 
+    def _create_display_item(self, text, tooltip='', alignment=None, path=None):
+        item = QStandardItem(str(text))
+        item.setEditable(False)
+        item.setToolTip(tooltip)
+        if alignment is not None:
+            item.setTextAlignment(alignment)
+        if path is not None:
+            item.setData(os.path.abspath(str(path)), Qt.UserRole)
+        return item
+
+    def _create_display_item_from_info(self, column_info):
+        if isinstance(column_info, dict):
+            text = column_info.get('text', '')
+            tooltip = column_info.get('tooltip', '')
+            alignment = column_info.get('alignment', Qt.AlignLeft | Qt.AlignVCenter)
+        else:
+            text = column_info
+            tooltip = ''
+            alignment = Qt.AlignLeft | Qt.AlignVCenter
+        return self._create_display_item(text, tooltip=tooltip, alignment=alignment)
+
     def _queue_path_for_row(self, row):
-        item = self.queue_model.item(row, FILEPATH_COLUMN)
+        item = self.queue_model.item(row, self.path_column)
         path = item.data(Qt.UserRole)
         if path is None:
             path = item.text()
