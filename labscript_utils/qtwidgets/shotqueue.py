@@ -58,7 +58,7 @@ class ShotQueueTreeView(QTreeView):
         self._accepted_extensions = _normalise_extensions(accepted_extensions)
 
     def keyPressEvent(self, event):
-        if event.key() == Qt.Key_Delete:
+        if event.key() in (Qt.Key_Delete, Qt.Key_Backspace):
             event.accept()
             self.deleteRequested.emit()
             return
