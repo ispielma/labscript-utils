@@ -160,9 +160,6 @@ class ShotQueueWidget(QWidget):
                 else QHeaderView.ResizeToContents
             )
             self.queue_view.header().setSectionResizeMode(column, resize_mode)
-        self.scrollbar_corner = QWidget(self.queue_view)
-        self.scrollbar_corner.setFixedWidth(self.queue_view.verticalScrollBar().sizeHint().width())
-        self.queue_view.setCornerWidget(self.scrollbar_corner)
 
         self.add_button = QToolButton(self)
         self.add_button.setText('Add')
