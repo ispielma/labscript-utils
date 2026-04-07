@@ -33,6 +33,70 @@ from labscript_profile.toml_config import (
 default_config_path = default_labconfig_path()
 
 
+def format_path_for_display(path):
+    """Return an absolute path with the user's home abbreviated for display."""
+    absolute_path = os.path.abspath(os.path.expanduser(os.fspath(path)))
+    home_path = str(Path.home())
+    normalized_path = os.path.normcase(os.path.normpath(absolute_path))
+    normalized_home = os.path.normcase(os.path.normpath(home_path))
+    display_home = '%USERPROFILE%' if os.name == 'nt' else '~'
+    if normalized_path == normalized_home:
+        return display_home
+    home_prefix = normalized_home + os.path.sep
+    if normalized_path.startswith(home_prefix):
+        relative_path = os.path.relpath(absolute_path, home_path)
+        separator = '\\' if os.name == 'nt' else '/'
+        return display_home + separator + relative_path.replace(os.path.sep, separator)
+    return absolute_path
+
+
+def get_default_appconfig_file(
+    exp_config, app_name, config_filename, ensure_directory=False
+):
+    try:
+        default_path = os.path.join(exp_config.get('default', 'app_saved_configs'), app_name)
+    except (LabConfig.NoOptionError, LabConfig.NoSectionError):
+        exp_config.set(
+            'default',
+            'app_saved_configs',
+            os.path.join(
+                '%(labscript_suite)s',
+                'userlib',
+                'app_saved_configs',
+                '%(apparatus_name)s',
+            ),
+        )
+        default_path = os.path.join(exp_config.get('default', 'app_saved_configs'), app_name)
+    if ensure_directory:
+        os.makedirs(default_path, exist_ok=True)
+    return os.path.join(default_path, config_filename)
+
+
+class LabscriptApplication(object):
+    app_name = None
+    default_config_filename = None
+
+    def init_config_window_title(self):
+        self.base_window_title = self.ui.windowTitle().split(' - ', 1)[0]
+
+    def get_default_config_file(self, ensure_directory=False):
+        if self.app_name is None or self.default_config_filename is None:
+            raise NotImplementedError(
+                'LabscriptApplication requires app_name and default_config_filename'
+            )
+        return get_default_appconfig_file(
+            self.exp_config,
+            self.app_name,
+            self.default_config_filename,
+            ensure_directory=ensure_directory,
+        )
+
+    def set_config_window_title(self, filename):
+        self.ui.setWindowTitle(
+            f'{self.base_window_title} - {format_path_for_display(filename)}'
+        )
+
+
 class EnvInterpolation(TomlBasicInterpolation):
     """Interpolation that expands environment variables after TOML/basic interpolation."""
 
