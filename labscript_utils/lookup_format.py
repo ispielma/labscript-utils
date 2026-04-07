@@ -18,7 +18,21 @@ class InvalidLookupFormatField(ValueError):
     """Raised when a lookup-format field is not valid lookup-only syntax."""
 
 
-def format_lookup_string(template, context, dt=None, preserve_unresolved=False):
+class _UnresolvedLookupError(LookupError):
+    """Raised when a lookup could not be resolved from the provided context."""
+
+    def __init__(self, root_name):
+        LookupError.__init__(self, root_name)
+        self.root_name = root_name
+
+
+def format_lookup_string(
+    template,
+    context,
+    dt=None,
+    preserve_unresolved=False,
+    preserve_unresolved_roots=(),
+):
     """Format a template using optional ``strftime`` plus lookup-only fields.
 
     Args:
@@ -26,17 +40,29 @@ def format_lookup_string(template, context, dt=None, preserve_unresolved=False):
         context (dict): Top-level lookup context.
         dt (datetime, optional): Datetime used for a first ``strftime`` pass.
         preserve_unresolved (bool): If True, unresolved lookups are left intact.
+        preserve_unresolved_roots (iterable): Root names that may be preserved when a
+            lookup below them is unresolved.
     """
     if dt is not None:
         template = dt.strftime(template)
-    formatter = _LookupFormatter(context, preserve_unresolved=preserve_unresolved)
+    formatter = _LookupFormatter(
+        context,
+        preserve_unresolved=preserve_unresolved,
+        preserve_unresolved_roots=preserve_unresolved_roots,
+    )
     return formatter.format(template)
 
 
 class _LookupFormatter(object):
-    def __init__(self, context, preserve_unresolved=False):
+    def __init__(
+        self,
+        context,
+        preserve_unresolved=False,
+        preserve_unresolved_roots=(),
+    ):
         self.context = context
         self.preserve_unresolved = preserve_unresolved
+        self.preserve_unresolved_roots = set(preserve_unresolved_roots)
         self.formatter = string.Formatter()
 
     def format(self, template):
@@ -55,8 +81,8 @@ class _LookupFormatter(object):
                 if format_spec:
                     format_spec = self.format(format_spec)
                 parts.append(self.formatter.format_field(value, format_spec))
-            except KeyError:
-                if self.preserve_unresolved:
+            except _UnresolvedLookupError as exc:
+                if self.preserve_unresolved or exc.root_name in self.preserve_unresolved_roots:
                     parts.append(placeholder)
                 else:
                     raise
@@ -67,12 +93,12 @@ class _LookupFormatter(object):
         try:
             value = self.context[root_name]
         except KeyError:
-            raise KeyError(root_name)
+            raise _UnresolvedLookupError(root_name)
         for lookup in lookups:
             try:
                 value = value[lookup]
-            except KeyError:
-                raise
+            except (IndexError, KeyError, TypeError):
+                raise _UnresolvedLookupError(root_name)
         return value
 
     @staticmethod
