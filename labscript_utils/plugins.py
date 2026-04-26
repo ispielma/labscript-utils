@@ -232,7 +232,7 @@ is not used::
         def get_setting_classes(self):
             return [SettingsPage]
 
-        def get_callbacks(self):
+        def get_event_handlers(self):
             return {
                 'settings_changed': self.on_settings_changed,
                 'shot_complete': self.on_shot_complete,
@@ -528,7 +528,7 @@ Callbacks with priorities
 numbers run first when the application asks ``PluginManager.get_callbacks()``::
 
     class SlowPlugin(BasePlugin):
-        def get_callbacks(self):
+        def get_event_handlers(self):
             return {
                 'shot_complete': self.on_slow,
             }
@@ -538,7 +538,7 @@ numbers run first when the application asks ``PluginManager.get_callbacks()``::
             pass
 
     class FastPlugin(BasePlugin):
-        def get_callbacks(self):
+        def get_event_handlers(self):
             return {
                 'shot_complete': self.on_fast,
             }
@@ -588,6 +588,8 @@ during shutdown so the plugin can release resources before exit.
 import importlib
 import logging
 import os
+import warnings
+from collections.abc import Mapping
 from types import MethodType
 
 
@@ -602,6 +604,14 @@ __all__ = [
     'MenuContext',
     'PluginManager',
 ]
+
+
+def _log_once(logger, seen, level, key, message):
+    """Log ``message`` once for each hashable ``key``."""
+    if key in seen:
+        return
+    seen.add(key)
+    logger.log(level, message)
 
 
 class Callback(object):
@@ -670,10 +680,13 @@ class BasePlugin(object):
     def get_menu_class(self):
         """Return a menu class for this plugin, or ``None``.
 
+        Deprecated compatibility hook for BLACS-style nested menus.
+
         The class is constructed as ``MenuClass(data)`` during
         ``PluginManager.setup_plugins()``. Its instance should provide
         ``get_menu_items()``, returning the nested menu dictionary consumed by
-        :class:`MenuBuilder`.
+        :class:`MenuBuilder`. New shared plugin code should prefer
+        :meth:`get_menu_contributions` instead.
         """
         return None
 
@@ -696,15 +709,30 @@ class BasePlugin(object):
         """
         return []
 
+    def get_event_handlers(self):
+        """Return a mapping of event names to handlers, or ``None``.
+
+        This is the preferred shared event hook surface. Return a mapping such
+        as ``{'shot_complete': self.on_shot_complete}``. Event names are
+        application-defined strings; this shared layer only collects,
+        normalizes, and orders handlers. Values may be plain callables or
+        :class:`Callback` instances created with the :class:`callback`
+        decorator. The manager sorts handlers for a given event by their
+        ``priority`` attribute.
+        """
+        return None
+
     def get_callbacks(self):
         """Return callbacks keyed by event name, or ``None``.
 
-        A typical return value is ``{'shot_complete': self.on_shot_complete}``.
-        Values may be plain callables or :class:`Callback` instances created
-        with the :class:`callback` decorator. The manager sorts callbacks for a
-        given event by their ``priority`` attribute.
+        Deprecated compatibility alias for :meth:`get_event_handlers`.
+
+        Existing BLACS-style plugins may still override this method. New
+        shared plugin code should implement :meth:`get_event_handlers`
+        instead. ``BasePlugin`` routes this legacy name to the modern hook so
+        the preferred surface is the real implementation path.
         """
-        return None
+        return self.get_event_handlers()
 
     def get_ui_contributions(self):
         """Return app-context UI contributions.
@@ -713,7 +741,7 @@ class BasePlugin(object):
         ``context`` key naming an application-registered context. The
         application owns what that context means: a known tab area, a deferred
         MDI workspace, a dialog registry, a fixed frame, or another
-        app-specific host.
+        app-specific host. The remaining keys are application-defined.
         """
         return []
 
@@ -723,7 +751,10 @@ class BasePlugin(object):
         Return an iterable of dictionaries. This is the app-neutral menu path.
         Existing BLACS-style plugins can continue using ``get_menu_class()``
         and :class:`MenuBuilder`; new apps can register a ``menus`` context and
-        route these dictionaries through :class:`MenuContext`.
+        route these dictionaries through :class:`MenuContext`. Apart from
+        stable menu keys such as ``location``, ``path``, ``group``, ``order``,
+        ``name``, and ``action``, the concrete menu objects remain
+        application-owned.
         """
         return []
 
@@ -738,7 +769,9 @@ class BasePlugin(object):
     def plugin_setup_complete(self, data=None):
         """Run after the application has finished plugin setup.
 
-        ``data`` is an application-defined dictionary. For BLACS it contains
+        ``data`` is an application-defined dictionary. Plugins commonly store
+        references to services or state they will need later when handling
+        events, building menus, or opening UI. For BLACS it contains
         references such as the main UI, experiment config, plugin mapping, and
         settings object. Older plugins may define this method without a
         ``data`` argument; ``PluginManager.setup_complete()`` keeps that
@@ -747,11 +780,20 @@ class BasePlugin(object):
         pass
 
     def get_save_data(self):
-        """Return serializable plugin state for the next application start."""
+        """Return serializable plugin state for the next application start.
+
+        The shape of this data is application-owned. Return plain data
+        structures that the application can persist and pass back as
+        ``initial_settings`` during the next start.
+        """
         return {}
 
     def close(self):
-        """Clean up resources owned by the plugin during application shutdown."""
+        """Clean up resources owned by the plugin during application shutdown.
+
+        Applications call this during shutdown. Stop timers, workers,
+        listeners, or other plugin-owned resources here.
+        """
         pass
 
 
@@ -992,6 +1034,7 @@ class PluginManager(object):
         self.modules = {}
         self.plugins = {}
         self.contexts = {}
+        self._logged_plugin_warnings = set()
 
     def discover_modules(self):
         """Scan the plugin directory, update config defaults, and import enabled modules."""
@@ -1076,10 +1119,19 @@ class PluginManager(object):
                 settings_pages.extend(plugin.get_setting_classes())
 
                 # Setup menu.
-                if plugin.get_menu_class():
+                menu_class = plugin.get_menu_class()
+                if menu_class:
+                    _log_once(
+                        self.logger,
+                        self._logged_plugin_warnings,
+                        logging.WARNING,
+                        (module_name, 'get_menu_class'),
+                        "Plugin '%s' uses deprecated get_menu_class(); "
+                        "prefer get_menu_contributions() instead." % module_name
+                    )
                     # Must store a reference or else the methods called when
                     # the menu actions are triggered will be garbage collected.
-                    menu = plugin.get_menu_class()(data)
+                    menu = menu_class(data)
                     menu_builder.create_menu(menubar, menu.get_menu_items())
                     plugin.set_menu_instance(menu)
 
@@ -1093,10 +1145,10 @@ class PluginManager(object):
                 plugin.set_notification_instances(plugin_notifications)
 
                 # Register callbacks.
-                callbacks = plugin.get_callbacks()
+                callbacks = self._get_plugin_event_handlers(module_name, plugin)
                 # Save the settings_changed callback in a separate list for
                 # setting up later.
-                if isinstance(callbacks, dict) and 'settings_changed' in callbacks:
+                if callbacks and 'settings_changed' in callbacks:
                     settings_callbacks.append(callbacks['settings_changed'])
 
             except Exception:
@@ -1233,16 +1285,68 @@ class PluginManager(object):
                         % module_name
                     )
 
-    def get_callbacks(self, name):
-        """Return all callbacks registered for ``name``, sorted by priority."""
+    def _defines_hook(self, plugin, method_name):
+        """Return whether ``plugin`` overrides ``method_name`` meaningfully."""
+        plugin_method = getattr(type(plugin), method_name, None)
+        if plugin_method is None:
+            return False
+
+        base_method = getattr(BasePlugin, method_name, None)
+        return plugin_method is not base_method
+
+    def _get_plugin_event_handlers(self, module_name, plugin):
+        """Return normalized event handlers for one plugin."""
+        has_modern = self._defines_hook(plugin, 'get_event_handlers')
+        has_legacy = self._defines_hook(plugin, 'get_callbacks')
+
+        if has_modern:
+            if has_legacy:
+                _log_once(
+                    self.logger,
+                    self._logged_plugin_warnings,
+                    logging.WARNING,
+                    (module_name, 'get_callbacks'),
+                    "Plugin '%s' defines deprecated get_callbacks() and "
+                    "preferred get_event_handlers(); ignoring get_callbacks()."
+                    % module_name
+                )
+            handlers = plugin.get_event_handlers()
+        elif has_legacy:
+            _log_once(
+                self.logger,
+                self._logged_plugin_warnings,
+                logging.WARNING,
+                (module_name, 'get_callbacks'),
+                "Plugin '%s' uses deprecated get_callbacks(); "
+                "implement get_event_handlers() instead." % module_name
+            )
+            handlers = plugin.get_callbacks()
+        else:
+            return None
+
+        if handlers is None:
+            return None
+        if not isinstance(handlers, Mapping):
+            self.logger.error(
+                "Plugin '%s' event handlers must be a mapping. Skipping."
+                % module_name
+            )
+            return None
+
+        return handlers
+
+    def get_event_handlers(self, name):
+        """Return all event handlers registered for ``name``, sorted by priority."""
         callbacks = []
 
-        for plugin in self.plugins.values():
+        for module_name, plugin in self.plugins.items():
             try:
-                plugin_callbacks = plugin.get_callbacks()
-                if plugin_callbacks is not None:
-                    if name in plugin_callbacks:
-                        callbacks.append(plugin_callbacks[name])
+                plugin_callbacks = self._get_plugin_event_handlers(
+                    module_name,
+                    plugin,
+                )
+                if plugin_callbacks and name in plugin_callbacks:
+                    callbacks.append(plugin_callbacks[name])
             except Exception:
                 self.logger.exception('Error getting callbacks from %s.' % str(plugin))
 
@@ -1250,6 +1354,16 @@ class PluginManager(object):
             key=lambda callback: getattr(callback, 'priority', DEFAULT_PRIORITY)
         )
         return callbacks
+
+    def get_callbacks(self, name):
+        """Deprecated compatibility wrapper for :meth:`get_event_handlers`."""
+        warnings.warn(
+            "PluginManager.get_callbacks() is deprecated; use "
+            "PluginManager.get_event_handlers() instead.",
+            DeprecationWarning,
+            stacklevel=2,
+        )
+        return self.get_event_handlers(name)
 
     def close_plugins(self):
         """Call ``close()`` on every plugin during application shutdown."""

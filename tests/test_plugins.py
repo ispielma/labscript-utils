@@ -1,6 +1,7 @@
 import logging
 import sys
 import uuid
+import warnings
 from pathlib import Path
 from types import SimpleNamespace
 
@@ -56,6 +57,7 @@ def test_base_plugin_defaults_are_no_ops():
     assert plugin.get_menu_class() is None
     assert plugin.get_notification_classes() == []
     assert plugin.get_setting_classes() == []
+    assert plugin.get_event_handlers() is None
     assert plugin.get_callbacks() is None
     assert plugin.get_ui_contributions() == []
     assert plugin.get_menu_contributions() == []
@@ -75,6 +77,24 @@ def make_plugin_package(tmp_path, modules):
         (module_dir / '__init__.py').write_text(source)
     sys.path.insert(0, str(tmp_path))
     return package + '.plugins', plugins_dir
+
+
+def make_manager(logger=None):
+    return PluginManager(
+        'package.plugins',
+        'plugins',
+        FakeConfig(),
+        'app/plugins',
+        logger=logger,
+    )
+
+
+class NoNotifications(object):
+    def add_notification(self, notification_class):
+        raise AssertionError('no notifications expected')
+
+    def get_instance(self, notification_class):
+        raise AssertionError('no notifications expected')
 
 
 def test_discovery_defaults_config_and_imports_only_enabled_plugins(tmp_path):
@@ -119,7 +139,7 @@ def test_instantiate_plugins_uses_saved_settings():
     assert plugins['plugin'].initial_settings == {'answer': 42}
 
 
-def test_get_callbacks_sorts_by_priority_and_logs_errors(caplog):
+def test_get_event_handlers_sorts_legacy_callbacks_by_priority_and_logs_errors(caplog):
     class Slow(object):
         def get_callbacks(self):
             return {'event': self.on_event}
@@ -141,13 +161,7 @@ def test_get_callbacks_sorts_by_priority_and_logs_errors(caplog):
             raise RuntimeError('broken')
 
     logger = logging.getLogger('test.plugins')
-    manager = PluginManager(
-        'package.plugins',
-        'plugins',
-        FakeConfig(),
-        'app/plugins',
-        logger=logger,
-    )
+    manager = make_manager(logger=logger)
     manager.plugins = {
         'slow': Slow(),
         'broken': Broken(),
@@ -155,10 +169,209 @@ def test_get_callbacks_sorts_by_priority_and_logs_errors(caplog):
     }
 
     with caplog.at_level(logging.ERROR, logger='test.plugins'):
-        callbacks = manager.get_callbacks('event')
+        callbacks = manager.get_event_handlers('event')
 
     assert [callback.priority for callback in callbacks] == [5, 20]
     assert 'Error getting callbacks from' in caplog.text
+
+
+def test_get_event_handlers_sorts_modern_handlers_by_priority():
+    class Slow(object):
+        def get_event_handlers(self):
+            return {'event': self.on_event}
+
+        @callback(priority=20)
+        def on_event(self):
+            pass
+
+    class Fast(object):
+        def get_event_handlers(self):
+            return {'event': self.on_event}
+
+        @callback(priority=5)
+        def on_event(self):
+            pass
+
+    manager = make_manager()
+    manager.plugins = {
+        'slow': Slow(),
+        'fast': Fast(),
+    }
+
+    callbacks = manager.get_event_handlers('event')
+
+    assert [callback.priority for callback in callbacks] == [5, 20]
+
+
+def test_get_callbacks_warns_and_delegates_to_get_event_handlers():
+    class Plugin(object):
+        def get_event_handlers(self):
+            return {'event': self.on_event}
+
+        @callback(priority=5)
+        def on_event(self):
+            pass
+
+    manager = make_manager()
+    manager.plugins = {'plugin': Plugin()}
+
+    with warnings.catch_warnings(record=True) as caught:
+        warnings.simplefilter('always', DeprecationWarning)
+        callbacks = manager.get_callbacks('event')
+
+    assert [callback.priority for callback in callbacks] == [5]
+    assert len(caught) == 1
+    assert 'PluginManager.get_callbacks() is deprecated' in str(caught[0].message)
+
+
+def test_get_event_handlers_prefers_modern_hook_and_warns_for_legacy_one(caplog):
+    class ModernAndLegacy(object):
+        def get_event_handlers(self):
+            return {'event': self.new_event}
+
+        def get_callbacks(self):
+            return {'event': self.old_event}
+
+        @callback(priority=5)
+        def new_event(self):
+            pass
+
+        @callback(priority=20)
+        def old_event(self):
+            pass
+
+    class LegacyOnly(object):
+        def get_callbacks(self):
+            return {'event': self.old_event}
+
+        @callback(priority=10)
+        def old_event(self):
+            pass
+
+    logger = logging.getLogger('test.plugins')
+    manager = make_manager(logger=logger)
+    manager.plugins = {
+        'modern_and_legacy': ModernAndLegacy(),
+        'legacy_only': LegacyOnly(),
+    }
+
+    with caplog.at_level(logging.WARNING, logger='test.plugins'):
+        first_callbacks = manager.get_event_handlers('event')
+        second_callbacks = manager.get_event_handlers('event')
+
+    assert [callback.priority for callback in first_callbacks] == [5, 10]
+    assert [callback.priority for callback in second_callbacks] == [5, 10]
+    warning_messages = [
+        record.getMessage()
+        for record in caplog.records
+        if record.levelno == logging.WARNING
+    ]
+    assert sum('modern_and_legacy' in message for message in warning_messages) == 1
+    assert sum('legacy_only' in message for message in warning_messages) == 1
+    assert sum('get_callbacks()' in message for message in warning_messages) == 2
+
+
+def test_setup_plugins_prefers_modern_settings_callback_and_warns(caplog):
+    class Plugin(BasePlugin):
+        def get_event_handlers(self):
+            return {'settings_changed': self.new_settings_changed}
+
+        def get_callbacks(self):
+            return {'settings_changed': self.old_settings_changed}
+
+        @callback(priority=5)
+        def new_settings_changed(self):
+            pass
+
+        @callback(priority=20)
+        def old_settings_changed(self):
+            pass
+
+    logger = logging.getLogger('test.plugins')
+    manager = make_manager(logger=logger)
+    manager.plugins = {'plugin': Plugin({})}
+
+    with caplog.at_level(logging.WARNING, logger='test.plugins'):
+        settings_pages, settings_callbacks = manager.setup_plugins(
+            data={},
+            notifications=NoNotifications(),
+            menu_builder=MenuBuilder(),
+            menubar=FakeMenu(),
+        )
+        callbacks = manager.get_event_handlers('settings_changed')
+
+    assert settings_pages == []
+    assert [callback.priority for callback in settings_callbacks] == [5]
+    assert [callback.priority for callback in callbacks] == [5]
+    warning_messages = [
+        record.getMessage()
+        for record in caplog.records
+        if record.levelno == logging.WARNING
+    ]
+    assert sum('deprecated get_callbacks()' in message for message in warning_messages) == 1
+
+
+def test_setup_plugins_warns_when_deprecated_menu_class_is_used(caplog):
+    class Menu(object):
+        def __init__(self, data):
+            self.data = data
+
+        def get_menu_items(self):
+            return {'name': 'Legacy'}
+
+    class Plugin(BasePlugin):
+        def get_menu_class(self):
+            return Menu
+
+    logger = logging.getLogger('test.plugins')
+    manager = make_manager(logger=logger)
+    manager.plugins = {'plugin': Plugin({})}
+
+    with caplog.at_level(logging.WARNING, logger='test.plugins'):
+        manager.setup_plugins(
+            data={'example': True},
+            notifications=NoNotifications(),
+            menu_builder=MenuBuilder(),
+            menubar=FakeMenu(),
+        )
+        manager.setup_plugins(
+            data={'example': True},
+            notifications=NoNotifications(),
+            menu_builder=MenuBuilder(),
+            menubar=FakeMenu(),
+        )
+
+    warning_messages = [
+        record.getMessage()
+        for record in caplog.records
+        if record.levelno == logging.WARNING
+    ]
+    assert sum('deprecated get_menu_class()' in message for message in warning_messages) == 1
+
+
+def test_get_event_handlers_logs_and_skips_malformed_event_handler_mappings(caplog):
+    class BadModern(object):
+        def get_event_handlers(self):
+            return ['event']
+
+    class BadLegacy(object):
+        def get_callbacks(self):
+            return ['event']
+
+    logger = logging.getLogger('test.plugins')
+    manager = make_manager(logger=logger)
+    manager.plugins = {
+        'bad_modern': BadModern(),
+        'bad_legacy': BadLegacy(),
+    }
+
+    with caplog.at_level(logging.ERROR, logger='test.plugins'):
+        callbacks = manager.get_event_handlers('event')
+
+    assert callbacks == []
+    assert "bad_modern" in caplog.text
+    assert "bad_legacy" in caplog.text
+    assert "event handlers must be a mapping" in caplog.text
 
 
 class FakeSignal(object):
