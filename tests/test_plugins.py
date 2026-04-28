@@ -653,3 +653,69 @@ def test_menu_context_renders_locations_paths_groups_order_and_action_options(ca
     assert tools_menu.items[0][1].name == 'Tool'
     assert 'missing' in caplog.text.lower()
     assert 'plugin_malformed' in caplog.text
+
+class RecordingHandler(logging.Handler):
+    def __init__(self):
+        super().__init__()
+        self.records = []
+
+    def emit(self, record):
+        self.records.append(record)
+
+
+class ServicePlugin(BasePlugin):
+    def __init__(self, services):
+        super().__init__({})
+        self._services = services
+
+    def get_services(self):
+        return self._services
+
+
+def test_base_plugin_exposes_no_services_by_default():
+    plugin = BasePlugin({})
+
+    assert plugin.get_services() == {}
+
+
+def test_collect_services_merges_base_and_plugin_services():
+    logger = logging.getLogger('test.plugins.services')
+    manager = make_manager(logger=logger)
+    manager.plugins = {
+        'alpha': ServicePlugin({'answer': 42}),
+        'beta': ServicePlugin({'greeter': str.upper}),
+    }
+
+    services = manager.collect_services({'execute_command': object()})
+
+    assert 'execute_command' in services
+    assert services['answer'] == 42
+    assert services['greeter'] is str.upper
+    assert manager.services is services
+
+
+def test_collect_services_skips_invalid_and_conflicting_entries():
+    logger = logging.getLogger('test.plugins.services')
+    handler = RecordingHandler()
+    logger.setLevel(logging.DEBUG)
+    logger.addHandler(handler)
+    try:
+        manager = make_manager(logger=logger)
+        manager.plugins = {
+            'alpha': ServicePlugin({'shared': 'first', 'unique': 'ok'}),
+            'beta': ServicePlugin({'shared': 'second'}),
+            'gamma': ServicePlugin(['not', 'a', 'mapping']),
+        }
+
+        services = manager.collect_services()
+
+        assert services['shared'] == 'first'
+        assert services['unique'] == 'ok'
+        messages = [record.getMessage() for record in handler.records]
+        assert any('must be a mapping' in message for message in messages)
+        assert any(
+            'conflicts with an existing service' in message
+            for message in messages
+        )
+    finally:
+        logger.removeHandler(handler)
