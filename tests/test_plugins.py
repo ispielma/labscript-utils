@@ -10,6 +10,7 @@ sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
 from labscript_utils.plugins import (
     BasePlugin,
     Callback,
+    DEFAULT_SETUP_PRIORITY,
     MenuBuilder,
     MenuContext,
     PluginManager,
@@ -719,3 +720,152 @@ def test_collect_services_skips_invalid_and_conflicting_entries():
         )
     finally:
         logger.removeHandler(handler)
+
+
+def test_legacy_plugin_setup_complete_runs_as_default_activity():
+    calls = []
+    data = {'services': object()}
+
+    class LegacySetupPlugin(BasePlugin):
+        def plugin_setup_complete(self, setup_data):
+            calls.append(('legacy', setup_data))
+
+    manager = make_manager()
+    manager.plugins = {'legacy': LegacySetupPlugin({})}
+
+    manager.setup_complete(data)
+
+    assert calls == [('legacy', data)]
+
+
+def test_duck_typed_plugin_setup_complete_still_runs():
+    calls = []
+    data = {'services': object()}
+
+    class DuckTypedSetupPlugin(object):
+        def plugin_setup_complete(self, setup_data):
+            calls.append(('duck', setup_data))
+
+    manager = make_manager()
+    manager.plugins = {'duck': DuckTypedSetupPlugin()}
+
+    manager.setup_complete(data)
+
+    assert calls == [('duck', data)]
+
+
+def test_multiple_setup_activities_run_in_priority_order():
+    calls = []
+    data = {'app': object()}
+
+    class ActivityPlugin(BasePlugin):
+        def get_setup_activities(self):
+            return [
+                {
+                    'name': 'late',
+                    'priority': DEFAULT_SETUP_PRIORITY + 10,
+                    'action': self.late,
+                },
+                {
+                    'name': 'early',
+                    'priority': DEFAULT_SETUP_PRIORITY - 10,
+                    'action': self.early,
+                },
+            ]
+
+        def early(self, setup_data):
+            calls.append(('early', setup_data))
+
+        def late(self, setup_data):
+            calls.append(('late', setup_data))
+
+    manager = make_manager()
+    manager.plugins = {'activity': ActivityPlugin({})}
+
+    manager.setup_complete(data)
+
+    assert calls == [('early', data), ('late', data)]
+
+
+def test_setup_activity_ordering_is_deterministic_across_plugins():
+    calls = []
+
+    class NamedActivityPlugin(BasePlugin):
+        def __init__(self, label):
+            super().__init__({})
+            self.label = label
+
+        def get_setup_activities(self):
+            return [
+                {
+                    'name': 'same_priority',
+                    'priority': DEFAULT_SETUP_PRIORITY,
+                    'action': self.record,
+                },
+            ]
+
+        def record(self, data):
+            del data
+            calls.append(self.label)
+
+    manager = make_manager()
+    manager.plugins = {
+        'zeta': NamedActivityPlugin('zeta'),
+        'alpha': NamedActivityPlugin('alpha'),
+    }
+
+    manager.setup_complete({})
+
+    assert calls == ['alpha', 'zeta']
+
+
+def test_setup_activity_names_break_priority_and_plugin_ties():
+    calls = []
+
+    class TiedActivityPlugin(BasePlugin):
+        def get_setup_activities(self):
+            return [
+                {
+                    'name': 'second',
+                    'priority': DEFAULT_SETUP_PRIORITY,
+                    'action': self.second,
+                },
+                {
+                    'name': 'first',
+                    'priority': DEFAULT_SETUP_PRIORITY,
+                    'action': self.first,
+                },
+            ]
+
+        def first(self, data):
+            del data
+            calls.append('first')
+
+        def second(self, data):
+            del data
+            calls.append('second')
+
+    manager = make_manager()
+    manager.plugins = {'plugin': TiedActivityPlugin({})}
+
+    manager.setup_complete({})
+
+    assert calls == ['first', 'second']
+
+
+def test_no_argument_plugin_setup_complete_fallback_still_runs(caplog):
+    calls = []
+
+    class NoArgumentSetupPlugin(BasePlugin):
+        def plugin_setup_complete(self):
+            calls.append('legacy-no-arg')
+
+    logger = logging.getLogger('test.plugins.setup')
+    manager = make_manager(logger=logger)
+    manager.plugins = {'legacy': NoArgumentSetupPlugin({})}
+
+    with caplog.at_level(logging.WARNING, logger='test.plugins.setup'):
+        manager.setup_complete({'unused': object()})
+
+    assert calls == ['legacy-no-arg']
+    assert 'using old API' in caplog.text

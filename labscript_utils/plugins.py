@@ -558,7 +558,8 @@ different order.
 ``setup_complete()`` is called after the application has finished startup.
 Use it to access app-owned state that was not available during construction,
 such as the main window, settings object, registered services, or concrete
-context objects::
+context objects. Existing plugins can keep overriding
+``plugin_setup_complete()``::
 
     class Plugin(BasePlugin):
         def plugin_setup_complete(self, data):
@@ -569,6 +570,28 @@ context objects::
 The ``data`` dictionary is app-defined. Old plugins may still define
 ``plugin_setup_complete(self)`` without the ``data`` argument, and the manager
 keeps that compatibility path.
+
+Plugins that need ordered startup work can return setup activity records from
+``get_setup_activities()``. Each record has ``name``, ``priority``, and
+``action`` keys; lower priority values run first. The default
+``get_setup_activities()`` implementation returns one activity for
+``plugin_setup_complete()``, so existing plugins use the same ordered pipeline
+as modern plugins::
+
+    class Plugin(BasePlugin):
+        def get_setup_activities(self):
+            return [
+                {
+                    'name': 'bind_services',
+                    'priority': DEFAULT_SETUP_PRIORITY,
+                    'action': self.bind_services,
+                },
+                {
+                    'name': 'start_worker',
+                    'priority': DEFAULT_SETUP_PRIORITY + 10,
+                    'action': self.start_worker,
+                },
+            ]
 
 Shutdown cleanup with ``close()``
 ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
@@ -594,9 +617,11 @@ from types import MethodType
 
 
 DEFAULT_PRIORITY = 10
+DEFAULT_SETUP_PRIORITY = 0
 
 __all__ = [
     'DEFAULT_PRIORITY',
+    'DEFAULT_SETUP_PRIORITY',
     'Callback',
     'callback',
     'BasePlugin',
@@ -779,6 +804,23 @@ class BasePlugin(object):
         """
         pass
 
+    def get_setup_activities(self):
+        """Return ordered setup activities for this plugin.
+
+        Existing plugins can override :meth:`plugin_setup_complete` and inherit
+        this method. Modern plugins can override this method to return multiple
+        activity records. Each record must provide ``name``, ``priority``, and
+        ``action`` keys; the manager executes all plugin activities through one
+        ordered setup pipeline.
+        """
+        return [
+            {
+                'name': 'plugin_setup_complete',
+                'priority': DEFAULT_SETUP_PRIORITY,
+                'action': self.plugin_setup_complete,
+            },
+        ]
+
     def get_save_data(self):
         """Return serializable plugin state for the next application start.
 
@@ -797,6 +839,7 @@ class BasePlugin(object):
         order-independent.
         """
         return {}
+
     def close(self):
         """Clean up resources owned by the plugin during application shutdown.
 
@@ -1316,19 +1359,109 @@ class PluginManager(object):
 
         self.services = services
         return services
+
     def setup_complete(self, data):
-        """Notify plugins that the application has finished startup."""
+        """Run plugin setup activities after application startup."""
+        setup_activities = []
+
         for module_name, plugin in self.plugins.items():
+            if hasattr(plugin, 'get_setup_activities'):
+                try:
+                    plugin_activities = plugin.get_setup_activities()
+                except Exception:
+                    self.logger.exception(
+                        "Error getting setup activities from plugin '%s'. "
+                        "Skipping." % module_name
+                    )
+                    continue
+            elif hasattr(plugin, 'plugin_setup_complete'):
+                plugin_activities = [
+                    {
+                        'name': 'plugin_setup_complete',
+                        'priority': DEFAULT_SETUP_PRIORITY,
+                        'action': plugin.plugin_setup_complete,
+                    },
+                ]
+            else:
+                continue
+
+            if plugin_activities is None:
+                continue
+            if (
+                isinstance(plugin_activities, (dict, str, bytes))
+                or not hasattr(plugin_activities, '__iter__')
+            ):
+                self.logger.error(
+                    "Plugin '%s' setup activities must be an iterable of "
+                    "dictionaries. Skipping." % module_name
+                )
+                continue
+
+            for activity in plugin_activities:
+                if not isinstance(activity, Mapping):
+                    self.logger.error(
+                        "Setup activity from plugin '%s' is not a dictionary. "
+                        "Skipping." % module_name
+                    )
+                    continue
+
+                try:
+                    name = activity['name']
+                    priority = activity['priority']
+                    action = activity['action']
+                except KeyError as exc:
+                    self.logger.error(
+                        "Setup activity from plugin '%s' missing key '%s'. "
+                        "Skipping." % (module_name, exc.args[0])
+                    )
+                    continue
+
+                if not callable(action):
+                    self.logger.error(
+                        "Setup activity '%s' from plugin '%s' action is not "
+                        "callable. Skipping." % (name, module_name)
+                    )
+                    continue
+
+                setup_activities.append(
+                    {
+                        'module_name': module_name,
+                        'plugin': plugin,
+                        'name': name,
+                        'priority': priority,
+                        'action': action,
+                    }
+                )
+
+        setup_activities.sort(
+            key=lambda activity: (
+                activity['priority'],
+                activity['module_name'],
+                activity['name'],
+            )
+        )
+
+        for activity in setup_activities:
+            module_name = activity['module_name']
+            activity_name = activity['name']
+            action = activity['action']
             try:
-                plugin.plugin_setup_complete(data)
+                action(data)
             except Exception:
+                if activity_name != 'plugin_setup_complete':
+                    self.logger.exception(
+                        "Error in setup activity '%s' for plugin '%s'. "
+                        "Plugin may not be functional."
+                        % (activity_name, module_name)
+                    )
+                    continue
+
                 self.logger.exception(
                     "Error in plugin_setup_complete() for plugin '%s'. "
                     "Trying again with old call signature..." % module_name
                 )
-                # Backwards compatibility for old plugins.
                 try:
-                    plugin.plugin_setup_complete()
+                    action()
                     self.logger.warning(
                         "Plugin '%s' using old API. Please update "
                         "Plugin.plugin_setup_complete method to accept a "
