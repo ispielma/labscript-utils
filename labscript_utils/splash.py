@@ -90,15 +90,15 @@ class Splash(QtWidgets.QFrame):
     BG = '#ffffff'
     FG = '#000000'
 
-    def __init__(self, imagepath, application_name=None):
+    def __init__(self, icon_path, application_name=None):
         self.qapplication = get_qapplication(
-            application_name=application_name, icon_path=imagepath
+            application_name=application_name, icon_path=icon_path
         )
         super().__init__()
         self.icon = QtGui.QPixmap()
-        self.icon.load(imagepath)
+        self.icon.load(icon_path)
         if self.icon.isNull():
-            raise ValueError("Invalid image file: {}.\n".format(imagepath))
+            raise ValueError("Invalid image file: {}.\n".format(icon_path))
         self.icon = self.icon.scaled(
             self.imwidth, self.imheight, Qt.AspectRatioMode.KeepAspectRatio, Qt.TransformationMode.SmoothTransformation
         )
