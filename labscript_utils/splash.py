@@ -43,10 +43,6 @@ def configure_qapplication(qapplication):
     """Apply labscript-wide QApplication configuration."""
     qapplication.setAttribute(Qt.AA_DontShowIconsInMenus, False)
     if sys.platform == 'darwin':
-        application_name = qapplication.property('_labscript_application_name')
-        if application_name:
-            qapplication.setApplicationName(application_name)
-            qapplication.setApplicationDisplayName(application_name)
         icon_path = qapplication.property('_labscript_icon_path')
         if icon_path:
             icon = QtGui.QIcon(icon_path)
@@ -68,7 +64,6 @@ def configure_qapplication(qapplication):
     qapplication.setProperty('_labscript_qapplication_configured', True)
     return qapplication
 
-
 class Splash(QtWidgets.QFrame):
     w = 250
     h = 230
@@ -80,15 +75,14 @@ class Splash(QtWidgets.QFrame):
     FG = '#000000'
 
     def __init__(self, imagepath, application_name=None):
-        if application_name is not None:
-            QtCore.QCoreApplication.setApplicationName(application_name)
-            QtGui.QGuiApplication.setApplicationDisplayName(application_name)
         self.qapplication = QtWidgets.QApplication.instance()
         if self.qapplication is None:
-            self.qapplication = QtWidgets.QApplication(sys.argv)
+            argv = sys.argv
+            if application_name is not None:
+                # Create a new argv so QApplication can alter it without mutating sys.argv.
+                argv = [application_name] + argv[1:]
+            self.qapplication = QtWidgets.QApplication(argv)
         self.qapplication.setProperty('_labscript_icon_path', imagepath)
-        if application_name is not None:
-            self.qapplication.setProperty('_labscript_application_name', application_name)
         configure_qapplication(self.qapplication)
         super().__init__()
         self.icon = QtGui.QPixmap()
