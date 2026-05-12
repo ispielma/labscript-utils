@@ -11,9 +11,7 @@
 #                                                                   #
 #####################################################################
 
-import json
 import sys
-from pathlib import Path
 from labscript_utils import dedent
 
 try:
@@ -47,23 +45,7 @@ def configure_qapplication(qapplication):
     if sys.platform == 'darwin':
         icon_path = qapplication.property('_labscript_icon_path')
         if icon_path:
-            icon_path = Path(icon_path)
-            try:
-                config = json.loads(
-                    (icon_path.parent / 'desktop-app.json').read_text(encoding='utf8')
-                )
-            except (OSError, json.JSONDecodeError):
-                application_name = None
-            else:
-                module_config = config.get('modules', {}).get(icon_path.stem, {})
-                application_name = (
-                    module_config.get('short_display_name')
-                    or module_config.get('display_name')
-                )
-            if application_name:
-                qapplication.setApplicationName(application_name)
-                qapplication.setApplicationDisplayName(application_name)
-            icon = QtGui.QIcon(str(icon_path))
+            icon = QtGui.QIcon(icon_path)
             if not icon.isNull():
                 qapplication.setWindowIcon(icon)
         if qapplication.property('_labscript_qapplication_configured'):
@@ -82,12 +64,20 @@ def configure_qapplication(qapplication):
     qapplication.setProperty('_labscript_qapplication_configured', True)
     return qapplication
 
-
-def get_qapplication(argv=None):
+def get_qapplication(argv=None, application_name=None):
     qapplication = QtWidgets.QApplication.instance()
+
     if qapplication is None:
-        qapplication = QtWidgets.QApplication(sys.argv if argv is None else argv)
+        argv = sys.argv if argv is None else argv
+        if application_name is not None:
+            # Create a new argv so QApplication can alter it without mutating sys.argv.
+            argv = [application_name] + argv[1:]
+
+        qapplication = QtWidgets.QApplication(argv)
+
     return configure_qapplication(qapplication)
+
+
 class Splash(QtWidgets.QFrame):
     w = 250
     h = 230
@@ -98,8 +88,8 @@ class Splash(QtWidgets.QFrame):
     BG = '#ffffff'
     FG = '#000000'
 
-    def __init__(self, imagepath):
-        self.qapplication = get_qapplication()
+    def __init__(self, imagepath, application_name=None):
+        self.qapplication = get_qapplication(application_name=application_name)
         self.qapplication.setProperty('_labscript_icon_path', imagepath)
         configure_qapplication(self.qapplication)
         super().__init__()
