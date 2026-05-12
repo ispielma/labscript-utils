@@ -74,7 +74,7 @@ class Splash(QtWidgets.QFrame):
     BG = '#ffffff'
     FG = '#000000'
 
-    def __init__(self, imagepath, application_name=None):
+    def __init__(self, icon_path, application_name=None):
         self.qapplication = QtWidgets.QApplication.instance()
         if self.qapplication is None:
             argv = sys.argv
@@ -82,13 +82,13 @@ class Splash(QtWidgets.QFrame):
                 # Create a new argv so QApplication can alter it without mutating sys.argv.
                 argv = [application_name] + argv[1:]
             self.qapplication = QtWidgets.QApplication(argv)
-        self.qapplication.setProperty('_labscript_icon_path', imagepath)
+        self.qapplication.setProperty('_labscript_icon_path', icon_path)
         configure_qapplication(self.qapplication)
         super().__init__()
         self.icon = QtGui.QPixmap()
-        self.icon.load(imagepath)
+        self.icon.load(icon_path)
         if self.icon.isNull():
-            raise ValueError("Invalid image file: {}.\n".format(imagepath))
+            raise ValueError("Invalid image file: {}.\n".format(icon_path))
         self.icon = self.icon.scaled(
             self.imwidth, self.imheight, Qt.AspectRatioMode.KeepAspectRatio, Qt.TransformationMode.SmoothTransformation
         )
