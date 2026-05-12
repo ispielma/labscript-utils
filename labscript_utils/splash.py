@@ -43,10 +43,6 @@ def configure_qapplication(qapplication):
     """Apply labscript-wide QApplication configuration."""
     qapplication.setAttribute(Qt.AA_DontShowIconsInMenus, False)
     if sys.platform == 'darwin':
-        application_name = qapplication.property('_labscript_application_name')
-        if application_name:
-            qapplication.setApplicationName(application_name)
-            qapplication.setApplicationDisplayName(application_name)
         icon_path = qapplication.property('_labscript_icon_path')
         if icon_path:
             icon = QtGui.QIcon(icon_path)
@@ -68,16 +64,17 @@ def configure_qapplication(qapplication):
     qapplication.setProperty('_labscript_qapplication_configured', True)
     return qapplication
 
-
 def get_qapplication(argv=None, application_name=None):
-    if application_name is not None:
-        QtCore.QCoreApplication.setApplicationName(application_name)
-        QtGui.QGuiApplication.setApplicationDisplayName(application_name)
     qapplication = QtWidgets.QApplication.instance()
+
     if qapplication is None:
-        qapplication = QtWidgets.QApplication(sys.argv if argv is None else argv)
-    if application_name is not None:
-        qapplication.setProperty('_labscript_application_name', application_name)
+        argv = sys.argv if argv is None else argv
+        if application_name is not None:
+            # Create a new argv so QApplication can alter it without mutating sys.argv.
+            argv = [application_name] + argv[1:]
+
+        qapplication = QtWidgets.QApplication(argv)
+
     return configure_qapplication(qapplication)
 
 
@@ -94,8 +91,6 @@ class Splash(QtWidgets.QFrame):
     def __init__(self, imagepath, application_name=None):
         self.qapplication = get_qapplication(application_name=application_name)
         self.qapplication.setProperty('_labscript_icon_path', imagepath)
-        if application_name is not None:
-            self.qapplication.setProperty('_labscript_application_name', application_name)
         configure_qapplication(self.qapplication)
         super().__init__()
         self.icon = QtGui.QPixmap()
