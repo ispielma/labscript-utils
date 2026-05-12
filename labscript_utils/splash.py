@@ -64,7 +64,7 @@ def configure_qapplication(qapplication):
     qapplication.setProperty('_labscript_qapplication_configured', True)
     return qapplication
 
-def get_qapplication(argv=None, application_name=None):
+def get_qapplication(argv=None, application_name=None, icon_path=None):
     qapplication = QtWidgets.QApplication.instance()
 
     if qapplication is None:
@@ -75,6 +75,8 @@ def get_qapplication(argv=None, application_name=None):
 
         qapplication = QtWidgets.QApplication(argv)
 
+    if icon_path is not None:
+        qapplication.setProperty('_labscript_icon_path', icon_path)
     return configure_qapplication(qapplication)
 
 
@@ -89,9 +91,9 @@ class Splash(QtWidgets.QFrame):
     FG = '#000000'
 
     def __init__(self, imagepath, application_name=None):
-        self.qapplication = get_qapplication(application_name=application_name)
-        self.qapplication.setProperty('_labscript_icon_path', imagepath)
-        configure_qapplication(self.qapplication)
+        self.qapplication = get_qapplication(
+            application_name=application_name, icon_path=imagepath
+        )
         super().__init__()
         self.icon = QtGui.QPixmap()
         self.icon.load(imagepath)
