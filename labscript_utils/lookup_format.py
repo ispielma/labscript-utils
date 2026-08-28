@@ -31,6 +31,16 @@ def _escape_braces(text):
     return text.replace('{', '{{').replace('}', '}}')
 
 
+def unescape_braces(text):
+    """Undo the brace escaping applied when producing a template.
+
+    Use this to display a partially formatted template, whose remaining passes
+    will otherwise do the unescaping. Kept beside :func:`_escape_braces` so the
+    two cannot drift apart.
+    """
+    return text.replace('{{', '{').replace('}}', '}')
+
+
 def format_lookup_string(
     template,
     context,
