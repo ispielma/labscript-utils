@@ -885,11 +885,16 @@ class MenuContext(object):
         self.contributions.append((plugin_name, contribution))
 
     def render(self):
-        """Render all collected menu contributions into registered locations."""
+        """Render all collected menu contributions into registered locations.
+
+        Collected contributions are consumed, so calling this twice does not
+        duplicate every menu entry.
+        """
+        contributions, self.contributions = self.contributions, []
         grouped = {}
         group_orders = {}
 
-        for plugin_name, contribution in self.contributions:
+        for plugin_name, contribution in contributions:
             if not isinstance(contribution, dict):
                 self.logger.error(
                     "Menu contribution from plugin '%s' is not a dictionary. "
@@ -924,13 +929,21 @@ class MenuContext(object):
                 path = tuple(path)
 
             key = (location, path)
-            group = contribution.get('group', None)
-            if key not in group_orders:
-                group_orders[key] = {}
-            if group not in group_orders[key]:
-                group_orders[key][group] = len(group_orders[key])
-
+            group_orders.setdefault(key, set()).add(contribution.get('group', None))
             grouped.setdefault(key, []).append((plugin_name, contribution))
+
+        # Order groups by name rather than by the order plugins happened to be
+        # discovered, which follows os.listdir() and so varies between machines.
+        # An ungrouped contribution sorts first.
+        group_orders = {
+            key: {
+                group: index
+                for index, group in enumerate(
+                    sorted(groups, key=lambda g: (g is not None, str(g)))
+                )
+            }
+            for key, groups in group_orders.items()
+        }
 
         menus = {}
         for name, menu in self.locations.items():
