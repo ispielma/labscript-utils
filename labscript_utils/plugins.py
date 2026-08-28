@@ -1017,7 +1017,7 @@ class PluginManager(object):
                 for example ``'myapp.plugins'``.
             plugins_dir (str): Filesystem path scanned for plugin directories.
             config: Config object with ``has_section()``, ``add_section()``,
-                ``items()``, ``set()``, and ``getboolean()`` methods.
+                ``has_option()``, ``set()``, and ``getboolean()`` methods.
             config_section (str): Section containing plugin enable/disable
                 options.
             default_plugins (iterable): Plugin names enabled by default when
@@ -1041,10 +1041,6 @@ class PluginManager(object):
         if not self.config.has_section(self.config_section):
             self.config.add_section(self.config_section)
 
-        configured_plugins = set(
-            name for name, val in self.config.items(self.config_section)
-        )
-
         modules = {}
         for module_name in os.listdir(self.plugins_dir):
             module_path = os.path.join(self.plugins_dir, module_name)
@@ -1052,16 +1048,34 @@ class PluginManager(object):
                 continue
 
             # Keep the config in sync with what is present on disk.
-            if module_name not in configured_plugins:
+            if not self.config.has_option(self.config_section, module_name):
                 self.config.set(
                     self.config_section,
                     module_name,
                     str(module_name in self.default_plugins),
                 )
-                configured_plugins.add(module_name)
+
+            try:
+                enabled = self.config.getboolean(self.config_section, module_name)
+            except ValueError:
+                # Config sections inherit the defaults section, so a config
+                # default whose name collides with a plugin directory is read
+                # here as that plugin's enable flag. Write a real flag into the
+                # section, which shadows the inherited value, rather than
+                # letting a path or other non-boolean default abort startup.
+                self.logger.warning(
+                    "Plugin '%s' shares its name with a config default; using "
+                    "the default enabled state." % module_name
+                )
+                self.config.set(
+                    self.config_section,
+                    module_name,
+                    str(module_name in self.default_plugins),
+                )
+                enabled = module_name in self.default_plugins
 
             # Only load activated plugins.
-            if self.config.getboolean(self.config_section, module_name):
+            if enabled:
                 try:
                     module = importlib.import_module(
                         self.plugin_package + '.' + module_name
