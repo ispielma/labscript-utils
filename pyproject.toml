@@ -56,6 +56,9 @@ Downloads = "https://github.com/labscript-suite/labscript-utils/releases/"
 Tracker = "https://github.com/labscript-suite/labscript-utils/issues/"
 
 [project.optional-dependencies]
+test = [
+    "pytest>=7.0",
+]
 docs = [
     "PyQt5",
     "Sphinx==8.2.3",
