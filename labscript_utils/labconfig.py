@@ -195,37 +195,39 @@ class LabConfig(TomlConfigParser):
         raise RuntimeError(msg)
 
 
+# LEGACY INI COMPATIBILITY. The '.ini' entry is deprecated and will be removed.
+APPCONFIG_SUFFIXES = ('.toml', '.ini')
+
+
+def appconfig_path_with_suffix(path, suffix):
+    """Return ``path`` carrying ``suffix``.
+
+    ``Path.with_suffix()`` replaces everything after the last dot, which is only
+    correct when the path already ends in an app config extension. App config
+    paths are routinely built from names that legitimately contain dots, such as
+    an analysis script called ``rb.87.imaging``, where replacing would silently
+    address a different file. Append in that case instead.
+    """
+    path = Path(path)
+    if path.suffix.lower() in APPCONFIG_SUFFIXES:
+        return path.with_suffix(suffix)
+    return path.with_name(path.name + suffix)
+
+
 def _resolve_appconfig_load_path(filename):
     path = Path(filename)
-    suffix = path.suffix.lower()
-    # LEGACY INI COMPATIBILITY. DEPRECATED CODE, WILL BE REMOVED.
-    if suffix == '.ini':
-        toml_path = path.with_suffix('.toml')
-        if toml_path.exists():
-            return toml_path
-        if path.exists():
-            return path
-        return path
-    if suffix == '.toml':
-        if path.exists():
-            return path
-        # LEGACY INI COMPATIBILITY. DEPRECATED CODE, WILL BE REMOVED.
-        legacy_path = path.with_suffix('.ini')
-        if legacy_path.exists():
-            return legacy_path
-        return path
-    toml_path = path.with_suffix('.toml')
+    toml_path = appconfig_path_with_suffix(path, '.toml')
     if toml_path.exists():
         return toml_path
     # LEGACY INI COMPATIBILITY. DEPRECATED CODE, WILL BE REMOVED.
-    legacy_path = path.with_suffix('.ini')
+    legacy_path = appconfig_path_with_suffix(path, '.ini')
     if legacy_path.exists():
         return legacy_path
     return toml_path
 
 
 def _resolve_appconfig_save_path(filename):
-    return Path(filename).with_suffix('.toml')
+    return appconfig_path_with_suffix(filename, '.toml')
 
 # LEGACY INI COMPATIBILITY. DEPRECATED CODE, WILL BE REMOVED.
 def backup_legacy_config(path):
