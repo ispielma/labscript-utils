@@ -1217,7 +1217,17 @@ class PluginManager(object):
             )
             return []
 
-        return contributions
+        # Materialise so that callers can test emptiness and iterate. A
+        # generator is truthy even when it yields nothing, which would report a
+        # plugin that contributed none as having contributed some.
+        try:
+            return list(contributions)
+        except Exception:
+            self.logger.exception(
+                "Error reading %s contributions from plugin '%s'. Skipping."
+                % (label, module_name)
+            )
+            return []
 
     def setup_contexts(self, data):
         """Route plugin-declared UI and menu contributions to app contexts."""
