@@ -586,6 +586,7 @@ during shutdown so the plugin can release resources before exit.
 """
 
 import importlib
+import inspect
 import logging
 import os
 import warnings
@@ -1274,30 +1275,41 @@ class PluginManager(object):
                         "Skipping." % module_name
                     )
 
+    def _setup_complete_args(self, module_name, plugin, data):
+        """Return the arguments ``plugin_setup_complete`` accepts.
+
+        Old plugins define the hook without a ``data`` argument. Detecting that
+        by letting a call fail would re-run whatever side effects a hook that
+        got partway through had already performed, so bind the signature
+        instead and call it exactly once.
+        """
+        try:
+            inspect.signature(plugin.plugin_setup_complete).bind(data)
+        except TypeError:
+            # Backwards compatibility for old plugins.
+            self.logger.warning(
+                "Plugin '%s' using old API. Please update "
+                "Plugin.plugin_setup_complete method to accept a "
+                "dictionary of blacs_data as the only argument."
+                % module_name
+            )
+            return ()
+        except ValueError:
+            # No introspectable signature; assume the current API.
+            pass
+        return (data,)
+
     def setup_complete(self, data):
         """Notify plugins that the application has finished startup."""
         for module_name, plugin in self.plugins.items():
+            args = self._setup_complete_args(module_name, plugin, data)
             try:
-                plugin.plugin_setup_complete(data)
+                plugin.plugin_setup_complete(*args)
             except Exception:
                 self.logger.exception(
-                    "Error in plugin_setup_complete() for plugin '%s'. "
-                    "Trying again with old call signature..." % module_name
+                    "Plugin '%s' error. Plugin may not be functional."
+                    % module_name
                 )
-                # Backwards compatibility for old plugins.
-                try:
-                    plugin.plugin_setup_complete()
-                    self.logger.warning(
-                        "Plugin '%s' using old API. Please update "
-                        "Plugin.plugin_setup_complete method to accept a "
-                        "dictionary of blacs_data as the only argument."
-                        % module_name
-                    )
-                except Exception:
-                    self.logger.exception(
-                        "Plugin '%s' error. Plugin may not be functional."
-                        % module_name
-                    )
 
     def _defines_hook(self, plugin, method_name):
         """Return whether ``plugin`` overrides ``method_name`` meaningfully."""
