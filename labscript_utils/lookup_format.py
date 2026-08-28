@@ -18,12 +18,17 @@ class InvalidLookupFormatField(ValueError):
     """Raised when a lookup-format field is not valid lookup-only syntax."""
 
 
-class _UnresolvedLookupError(LookupError):
+class UnresolvedLookupField(LookupError):
     """Raised when a lookup could not be resolved from the provided context."""
 
     def __init__(self, root_name):
         LookupError.__init__(self, root_name)
         self.root_name = root_name
+
+
+def _escape_braces(text):
+    """Escape braces so ``text`` survives a further formatting pass verbatim."""
+    return text.replace('{', '{{').replace('}', '}}')
 
 
 def format_lookup_string(
@@ -42,6 +47,10 @@ def format_lookup_string(
         preserve_unresolved (bool): If True, unresolved lookups are left intact.
         preserve_unresolved_roots (iterable): Root names that may be preserved when a
             lookup below them is unresolved.
+
+    Preserving unresolved lookups makes the result a template for a further pass,
+    so literal text and resolved values are brace-escaped to survive it. Without
+    preservation the result is final text and is emitted verbatim.
     """
     if dt is not None:
         template = dt.strftime(template)
@@ -63,12 +72,18 @@ class _LookupFormatter(object):
         self.context = context
         self.preserve_unresolved = preserve_unresolved
         self.preserve_unresolved_roots = set(preserve_unresolved_roots)
+        # Preserved placeholders only mean anything to a later pass, so when any
+        # preservation is enabled this pass is producing a template rather than
+        # final text.
+        self.produces_template = bool(preserve_unresolved or self.preserve_unresolved_roots)
         self.formatter = string.Formatter()
 
-    def format(self, template):
+    def format(self, template, produces_template=None):
+        if produces_template is None:
+            produces_template = self.produces_template
         parts = []
         for literal_text, field_name, format_spec, conversion in self.formatter.parse(template):
-            parts.append(literal_text)
+            parts.append(_escape_braces(literal_text) if produces_template else literal_text)
             if field_name is None:
                 continue
             placeholder = self._reconstruct_placeholder(
@@ -79,10 +94,15 @@ class _LookupFormatter(object):
                 if conversion:
                     value = self.formatter.convert_field(value, conversion)
                 if format_spec:
-                    format_spec = self.format(format_spec)
-                parts.append(self.formatter.format_field(value, format_spec))
-            except _UnresolvedLookupError as exc:
+                    # A format spec is consumed by this pass, never re-parsed.
+                    format_spec = self.format(format_spec, produces_template=False)
+                formatted = self.formatter.format_field(value, format_spec)
+                # A resolved value containing a brace would otherwise be read as
+                # a field by the next pass.
+                parts.append(_escape_braces(formatted) if produces_template else formatted)
+            except UnresolvedLookupField as exc:
                 if self.preserve_unresolved or exc.root_name in self.preserve_unresolved_roots:
+                    # The placeholder must stay parseable for the next pass.
                     parts.append(placeholder)
                 else:
                     raise
@@ -93,12 +113,12 @@ class _LookupFormatter(object):
         try:
             value = self.context[root_name]
         except KeyError:
-            raise _UnresolvedLookupError(root_name)
+            raise UnresolvedLookupField(root_name)
         for lookup in lookups:
             try:
                 value = value[lookup]
             except (IndexError, KeyError, TypeError):
-                raise _UnresolvedLookupError(root_name)
+                raise UnresolvedLookupField(root_name)
         return value
 
     @staticmethod
