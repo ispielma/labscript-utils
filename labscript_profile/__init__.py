@@ -8,7 +8,12 @@ from subprocess import check_output
 import socket
 from getpass import getuser
 
-from .toml_config import TomlConfigParser, dump_toml_file, load_toml_file
+from .toml_config import (
+    TomlConfigParser,
+    as_config_list,
+    dump_toml_file,
+    load_toml_file,
+)
 
 # The contents of this file are imported every time the Python interpreter starts up,
 # owing to our custom .pth file that runs the below two functions. This ensures that
@@ -68,9 +73,8 @@ def add_userlib_and_pythonlib():
             paths = config.get('default', option)
         except (configparser.NoSectionError, configparser.NoOptionError):
             paths = ''
-        if paths:
-            for path in paths.split(','):
-                site.addsitedir(path)
+        for path in as_config_list(paths):
+            site.addsitedir(path)
 
 
 def ensure_labconfig():

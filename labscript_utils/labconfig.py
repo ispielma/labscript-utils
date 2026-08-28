@@ -195,37 +195,39 @@ class LabConfig(TomlConfigParser):
         raise RuntimeError(msg)
 
 
+# LEGACY INI COMPATIBILITY. The '.ini' entry is deprecated and will be removed.
+APPCONFIG_SUFFIXES = ('.toml', '.ini')
+
+
+def appconfig_path_with_suffix(path, suffix):
+    """Return ``path`` carrying ``suffix``.
+
+    ``Path.with_suffix()`` replaces everything after the last dot, which is only
+    correct when the path already ends in an app config extension. App config
+    paths are routinely built from names that legitimately contain dots, such as
+    an analysis script called ``rb.87.imaging``, where replacing would silently
+    address a different file. Append in that case instead.
+    """
+    path = Path(path)
+    if path.suffix.lower() in APPCONFIG_SUFFIXES:
+        return path.with_suffix(suffix)
+    return path.with_name(path.name + suffix)
+
+
 def _resolve_appconfig_load_path(filename):
     path = Path(filename)
-    suffix = path.suffix.lower()
-    # LEGACY INI COMPATIBILITY. DEPRECATED CODE, WILL BE REMOVED.
-    if suffix == '.ini':
-        toml_path = path.with_suffix('.toml')
-        if toml_path.exists():
-            return toml_path
-        if path.exists():
-            return path
-        return path
-    if suffix == '.toml':
-        if path.exists():
-            return path
-        # LEGACY INI COMPATIBILITY. DEPRECATED CODE, WILL BE REMOVED.
-        legacy_path = path.with_suffix('.ini')
-        if legacy_path.exists():
-            return legacy_path
-        return path
-    toml_path = path.with_suffix('.toml')
+    toml_path = appconfig_path_with_suffix(path, '.toml')
     if toml_path.exists():
         return toml_path
     # LEGACY INI COMPATIBILITY. DEPRECATED CODE, WILL BE REMOVED.
-    legacy_path = path.with_suffix('.ini')
+    legacy_path = appconfig_path_with_suffix(path, '.ini')
     if legacy_path.exists():
         return legacy_path
     return toml_path
 
 
 def _resolve_appconfig_save_path(filename):
-    return Path(filename).with_suffix('.toml')
+    return appconfig_path_with_suffix(filename, '.toml')
 
 # LEGACY INI COMPATIBILITY. DEPRECATED CODE, WILL BE REMOVED.
 def backup_legacy_config(path):
@@ -261,6 +263,12 @@ def _to_toml_compatible(value, location='value'):
         ]
     if isinstance(value, (str, bool, int, float)):
         return value
+    if value is None:
+        # A None option is dropped by save_appconfig(), which never reaches
+        # here. Inside a list there is no way to drop one without shifting
+        # every later index, so that stays an error.
+        msg = f"{location} is None, which a TOML list cannot represent"
+        raise TypeError(msg)
     msg = f"{location} value {value!r} is not representable in TOML app config"
     raise TypeError(msg)
 
@@ -276,11 +284,17 @@ def _load_legacy_appconfig_value(value):
 
 
 def save_appconfig(filename, data):
-    """Save a dictionary as a TOML app config."""
+    """Save a dictionary as a TOML app config.
+
+    TOML has no null, and represents absence by omitting the key. Options whose
+    value is ``None`` are therefore left out; ``load_appconfig()`` returns a
+    mapping, so callers reading them back with ``.get()`` see ``None`` again.
+    """
     data = {
         section_name: {
             name: _to_toml_compatible(value, f"{section_name}/{name}")
             for name, value in section.items()
+            if value is not None
         }
         for section_name, section in data.items()
     }
@@ -319,10 +333,14 @@ def load_appconfig(filename, return_save_path=False):
             backup_legacy_config(filename)
     else:
         raw = load_toml_file(filename) if filename.exists() else {}
+        # Every table is returned, including one named 'default'. App configs
+        # are plain section/option documents with no DEFAULT inheritance, so
+        # dropping that name here would silently discard a section
+        # save_appconfig() had just written.
         data = {
             section_name: dict(section.items())
             for section_name, section in raw.items()
-            if section_name != 'default' and isinstance(section, dict)
+            if isinstance(section, dict)
         }
         if filename.suffix.lower() == '.toml':
             save_path = filename

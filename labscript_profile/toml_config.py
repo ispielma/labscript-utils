@@ -8,6 +8,22 @@ except ImportError:
 import tomli_w
 
 
+def as_config_list(value):
+    """Return a labconfig value as a list of stripped strings.
+
+    TOML gives options native types, so a path-list option may arrive either as
+    a comma-separated string, as it always did under INI, or as a real TOML
+    array. Accept both, and treat anything else as a single entry.
+    """
+    if value is None:
+        return []
+    if isinstance(value, str):
+        return [item.strip() for item in value.split(',') if item.strip()]
+    if isinstance(value, (list, tuple)):
+        return [str(item).strip() for item in value if str(item).strip()]
+    return [str(value).strip()]
+
+
 def load_toml_file(filename):
     with open(filename, 'rb') as f:
         return tomllib.load(f)

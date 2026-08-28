@@ -19,8 +19,16 @@ from labscript_utils.plugins import (
 
 
 class FakeConfig(object):
-    def __init__(self):
+    """Minimal stand-in for LabConfig, including the two behaviours that matter.
+
+    A real config inherits its defaults section into every section, and returns
+    native TOML types rather than strings. Modelling neither is what let the
+    defaults-as-plugin-names bug survive in the first place.
+    """
+
+    def __init__(self, defaults=None):
         self.sections = {}
+        self.defaults = dict(defaults or {})
 
     def has_section(self, name):
         return name in self.sections
@@ -29,13 +37,30 @@ class FakeConfig(object):
         self.sections[name] = {}
 
     def items(self, name):
-        return list(self.sections[name].items())
+        merged = dict(self.defaults)
+        merged.update(self.sections[name])
+        return list(merged.items())
+
+    def has_option(self, section, option):
+        return option in self.sections.get(section, {}) or option in self.defaults
+
+    def get(self, section, option):
+        if option in self.sections.get(section, {}):
+            return self.sections[section][option]
+        return self.defaults[option]
 
     def set(self, section, option, value):
         self.sections[section][option] = value
 
     def getboolean(self, section, option):
-        return self.sections[section][option].lower() == 'true'
+        value = self.get(section, option)
+        if isinstance(value, bool):
+            return value
+        if str(value).lower() in ('true', 'yes', 'on', '1'):
+            return True
+        if str(value).lower() in ('false', 'no', 'off', '0'):
+            return False
+        raise ValueError('Not a boolean: %s' % value)
 
 
 def test_callback_binds_as_method_and_keeps_priority():
@@ -118,8 +143,8 @@ def test_discovery_defaults_config_and_imports_only_enabled_plugins(tmp_path):
     modules = manager.discover_modules()
 
     assert set(modules) == {'enabled'}
-    assert config.sections['app/plugins']['enabled'] == 'True'
-    assert config.sections['app/plugins']['disabled'] == 'False'
+    assert config.sections['app/plugins']['enabled'] is True
+    assert config.sections['app/plugins']['disabled'] is False
 
 
 def test_instantiate_plugins_uses_saved_settings():
@@ -869,3 +894,158 @@ def test_no_argument_plugin_setup_complete_fallback_still_runs(caplog):
 
     assert calls == ['legacy-no-arg']
     assert 'using old API' in caplog.text
+
+def _make_plugin_dirs(tmp_path, names):
+    for name in names:
+        (tmp_path / name).mkdir(parents=True)
+    return str(tmp_path)
+
+
+def test_discover_modules_ignores_config_defaults(tmp_path, caplog):
+    """A config default must never be read as a plugin's enable flag."""
+    config = FakeConfig(defaults={'userlib': '/some/path/userlib'})
+    plugins_dir = _make_plugin_dirs(tmp_path, ['userlib'])
+    logger = logging.getLogger('test.plugins.discover.defaults')
+    manager = PluginManager(
+        'package.plugins', plugins_dir, config, 'app/plugins',
+        default_plugins=(), logger=logger,
+    )
+
+    with caplog.at_level(logging.WARNING, logger=logger.name):
+        modules = manager.discover_modules()
+
+    # Before the fix this raised ValueError: Not a boolean: /some/path/userlib
+    assert modules == {}
+    assert config.sections['app/plugins']['userlib'] is False
+    assert 'shares its name with a config default' in caplog.text
+
+
+def test_discover_modules_keeps_a_flag_set_in_both_places(tmp_path):
+    """A section option shadows the default, so an explicit flag still wins."""
+    config = FakeConfig(defaults={'userlib': '/some/path/userlib'})
+    config.sections['app/plugins'] = {'userlib': True}
+    plugins_dir = _make_plugin_dirs(tmp_path, ['userlib'])
+    manager = PluginManager(
+        'package.plugins', plugins_dir, config, 'app/plugins',
+        default_plugins=(), logger=logging.getLogger('test.plugins.discover.both'),
+    )
+
+    manager.discover_modules()
+
+    assert config.sections['app/plugins']['userlib'] is True
+
+
+def test_discover_modules_seeds_flags_as_booleans(tmp_path):
+    config = FakeConfig()
+    plugins_dir = _make_plugin_dirs(tmp_path, ['enabled_one', 'disabled_one'])
+    manager = PluginManager(
+        'package.plugins', plugins_dir, config, 'app/plugins',
+        default_plugins=('enabled_one',),
+        logger=logging.getLogger('test.plugins.discover.bools'),
+    )
+
+    manager.discover_modules()
+
+    assert config.sections['app/plugins']['enabled_one'] is True
+    assert config.sections['app/plugins']['disabled_one'] is False
+
+
+def test_setup_complete_runs_optional_argument_hook_once():
+    """The BasePlugin signature must not be re-run by an old-API retry."""
+    calls = []
+
+    class OptionalArgumentPlugin(BasePlugin):
+        def plugin_setup_complete(self, data=None):
+            calls.append(data)
+            raise RuntimeError('failed after the side effect')
+
+    manager = make_manager(logger=logging.getLogger('test.plugins.setup.once'))
+    manager.plugins = {'optional': OptionalArgumentPlugin({})}
+    data = {'settings': object()}
+
+    manager.setup_complete(data)
+
+    assert calls == [data]
+
+
+def test_empty_generator_contributions_do_not_report_a_missing_context():
+    class GeneratorPlugin(BasePlugin):
+        def get_menu_contributions(self):
+            return (contribution for contribution in [])
+
+    logger = logging.getLogger('test.plugins.contributions.generator')
+    manager = make_manager(logger=logger)
+    manager.plugins = {'gen': GeneratorPlugin({})}
+    manager.contexts = {}
+
+    records = []
+    handler = logging.Handler()
+    handler.emit = lambda record: records.append(record.getMessage())
+    logger.addHandler(handler)
+    try:
+        manager.setup_contexts({})
+    finally:
+        logger.removeHandler(handler)
+
+    assert not [message for message in records if 'menus' in message]
+
+
+def test_menu_context_group_order_is_independent_of_discovery_order():
+    def render_with(order):
+        menu = _RecordingMenu()
+        context = MenuContext(logger=logging.getLogger('test.plugins.menus.order'))
+        context.register_location('file', menu)
+        for plugin_name, group, name in order:
+            context.add(
+                plugin_name,
+                {'location': 'file', 'group': group, 'name': name},
+                {},
+            )
+        context.render()
+        return menu.entries
+
+    order = [('zeta', 'beta', 'Z'), ('alpha', 'alpha', 'A'), ('mid', None, 'M')]
+    assert render_with(order) == render_with(list(reversed(order)))
+
+
+def test_menu_context_render_is_idempotent():
+    menu = _RecordingMenu()
+    context = MenuContext(logger=logging.getLogger('test.plugins.menus.idempotent'))
+    context.register_location('file', menu)
+    context.add('one', {'location': 'file', 'name': 'A'}, {})
+
+    context.render()
+    entries_after_first = list(menu.entries)
+    context.render()
+
+    assert menu.entries == entries_after_first
+
+
+class _RecordingAction(object):
+    def __init__(self):
+        self.triggered = SimpleNamespace(connect=lambda callback: None)
+
+    def setShortcut(self, shortcut):
+        pass
+
+    def setCheckable(self, checkable):
+        pass
+
+    def setEnabled(self, enabled):
+        pass
+
+
+class _RecordingMenu(object):
+    def __init__(self):
+        self.entries = []
+
+    def addAction(self, *args):
+        self.entries.append(args[-1])
+        return _RecordingAction()
+
+    def addSeparator(self):
+        self.entries.append('---')
+
+    def addMenu(self, name):
+        self.entries.append(('submenu', name))
+        return _RecordingMenu()

@@ -609,6 +609,7 @@ during shutdown so the plugin can release resources before exit.
 """
 
 import importlib
+import inspect
 import logging
 import os
 import warnings
@@ -936,11 +937,16 @@ class MenuContext(object):
         self.contributions.append((plugin_name, contribution))
 
     def render(self):
-        """Render all collected menu contributions into registered locations."""
+        """Render all collected menu contributions into registered locations.
+
+        Collected contributions are consumed, so calling this twice does not
+        duplicate every menu entry.
+        """
+        contributions, self.contributions = self.contributions, []
         grouped = {}
         group_orders = {}
 
-        for plugin_name, contribution in self.contributions:
+        for plugin_name, contribution in contributions:
             if not isinstance(contribution, dict):
                 self.logger.error(
                     "Menu contribution from plugin '%s' is not a dictionary. "
@@ -975,13 +981,21 @@ class MenuContext(object):
                 path = tuple(path)
 
             key = (location, path)
-            group = contribution.get('group', None)
-            if key not in group_orders:
-                group_orders[key] = {}
-            if group not in group_orders[key]:
-                group_orders[key][group] = len(group_orders[key])
-
+            group_orders.setdefault(key, set()).add(contribution.get('group', None))
             grouped.setdefault(key, []).append((plugin_name, contribution))
+
+        # Order groups by name rather than by the order plugins happened to be
+        # discovered, which follows os.listdir() and so varies between machines.
+        # An ungrouped contribution sorts first.
+        group_orders = {
+            key: {
+                group: index
+                for index, group in enumerate(
+                    sorted(groups, key=lambda g: (g is not None, str(g)))
+                )
+            }
+            for key, groups in group_orders.items()
+        }
 
         menus = {}
         for name, menu in self.locations.items():
@@ -1069,7 +1083,7 @@ class PluginManager(object):
                 for example ``'myapp.plugins'``.
             plugins_dir (str): Filesystem path scanned for plugin directories.
             config: Config object with ``has_section()``, ``add_section()``,
-                ``items()``, ``set()``, and ``getboolean()`` methods.
+                ``has_option()``, ``set()``, and ``getboolean()`` methods.
             config_section (str): Section containing plugin enable/disable
                 options.
             default_plugins (iterable): Plugin names enabled by default when
@@ -1094,10 +1108,6 @@ class PluginManager(object):
         if not self.config.has_section(self.config_section):
             self.config.add_section(self.config_section)
 
-        configured_plugins = set(
-            name for name, val in self.config.items(self.config_section)
-        )
-
         modules = {}
         for module_name in os.listdir(self.plugins_dir):
             module_path = os.path.join(self.plugins_dir, module_name)
@@ -1105,16 +1115,34 @@ class PluginManager(object):
                 continue
 
             # Keep the config in sync with what is present on disk.
-            if module_name not in configured_plugins:
+            if not self.config.has_option(self.config_section, module_name):
                 self.config.set(
                     self.config_section,
                     module_name,
-                    str(module_name in self.default_plugins),
+                    module_name in self.default_plugins,
                 )
-                configured_plugins.add(module_name)
+
+            try:
+                enabled = self.config.getboolean(self.config_section, module_name)
+            except ValueError:
+                # Config sections inherit the defaults section, so a config
+                # default whose name collides with a plugin directory is read
+                # here as that plugin's enable flag. Write a real flag into the
+                # section, which shadows the inherited value, rather than
+                # letting a path or other non-boolean default abort startup.
+                self.logger.warning(
+                    "Plugin '%s' shares its name with a config default; using "
+                    "the default enabled state." % module_name
+                )
+                self.config.set(
+                    self.config_section,
+                    module_name,
+                    module_name in self.default_plugins,
+                )
+                enabled = module_name in self.default_plugins
 
             # Only load activated plugins.
-            if self.config.getboolean(self.config_section, module_name):
+            if enabled:
                 try:
                     module = importlib.import_module(
                         self.plugin_package + '.' + module_name
@@ -1242,7 +1270,17 @@ class PluginManager(object):
             )
             return []
 
-        return contributions
+        # Materialise so that callers can test emptiness and iterate. A
+        # generator is truthy even when it yields nothing, which would report a
+        # plugin that contributed none as having contributed some.
+        try:
+            return list(contributions)
+        except Exception:
+            self.logger.exception(
+                "Error reading %s contributions from plugin '%s'. Skipping."
+                % (label, module_name)
+            )
+            return []
 
     def setup_contexts(self, data):
         """Route plugin-declared UI and menu contributions to app contexts."""
@@ -1445,34 +1483,44 @@ class PluginManager(object):
             module_name = activity['module_name']
             activity_name = activity['name']
             action = activity['action']
+            args = self._setup_action_args(module_name, activity_name, action, data)
             try:
-                action(data)
+                action(*args)
             except Exception:
-                if activity_name != 'plugin_setup_complete':
-                    self.logger.exception(
-                        "Error in setup activity '%s' for plugin '%s'. "
-                        "Plugin may not be functional."
-                        % (activity_name, module_name)
-                    )
-                    continue
-
                 self.logger.exception(
-                    "Error in plugin_setup_complete() for plugin '%s'. "
-                    "Trying again with old call signature..." % module_name
+                    "Error in setup activity '%s' for plugin '%s'. "
+                    "Plugin may not be functional."
+                    % (activity_name, module_name)
                 )
-                try:
-                    action()
-                    self.logger.warning(
-                        "Plugin '%s' using old API. Please update "
-                        "Plugin.plugin_setup_complete method to accept a "
-                        "dictionary of blacs_data as the only argument."
-                        % module_name
-                    )
-                except Exception:
-                    self.logger.exception(
-                        "Plugin '%s' error. Plugin may not be functional."
-                        % module_name
-                    )
+
+    def _setup_action_args(self, module_name, activity_name, action, data):
+        """Return the arguments a setup activity's ``action`` accepts.
+
+        Old plugins define ``plugin_setup_complete`` without a ``data``
+        argument. Detecting that by letting a call fail would re-run whatever
+        side effects an action that got partway through had already performed,
+        so bind the signature instead and call it exactly once.
+        """
+        try:
+            inspect.signature(action).bind(data)
+        except TypeError:
+            if activity_name != 'plugin_setup_complete':
+                # Only plugin_setup_complete has a legacy no-argument form. Any
+                # other arity mismatch is a plugin bug, so let the call raise
+                # and be reported rather than quietly calling it differently.
+                return (data,)
+            # Backwards compatibility for old plugins.
+            self.logger.warning(
+                "Plugin '%s' using old API. Please update "
+                "Plugin.plugin_setup_complete method to accept a "
+                "dictionary of blacs_data as the only argument."
+                % module_name
+            )
+            return ()
+        except ValueError:
+            # No introspectable signature; assume the current API.
+            pass
+        return (data,)
 
     def _defines_hook(self, plugin, method_name):
         """Return whether ``plugin`` overrides ``method_name`` meaningfully."""
