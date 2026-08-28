@@ -1052,7 +1052,7 @@ class PluginManager(object):
                 self.config.set(
                     self.config_section,
                     module_name,
-                    str(module_name in self.default_plugins),
+                    module_name in self.default_plugins,
                 )
 
             try:
@@ -1070,7 +1070,7 @@ class PluginManager(object):
                 self.config.set(
                     self.config_section,
                     module_name,
-                    str(module_name in self.default_plugins),
+                    module_name in self.default_plugins,
                 )
                 enabled = module_name in self.default_plugins
 
