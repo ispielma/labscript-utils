@@ -263,6 +263,12 @@ def _to_toml_compatible(value, location='value'):
         ]
     if isinstance(value, (str, bool, int, float)):
         return value
+    if value is None:
+        # A None option is dropped by save_appconfig(), which never reaches
+        # here. Inside a list there is no way to drop one without shifting
+        # every later index, so that stays an error.
+        msg = f"{location} is None, which a TOML list cannot represent"
+        raise TypeError(msg)
     msg = f"{location} value {value!r} is not representable in TOML app config"
     raise TypeError(msg)
 
@@ -278,11 +284,17 @@ def _load_legacy_appconfig_value(value):
 
 
 def save_appconfig(filename, data):
-    """Save a dictionary as a TOML app config."""
+    """Save a dictionary as a TOML app config.
+
+    TOML has no null, and represents absence by omitting the key. Options whose
+    value is ``None`` are therefore left out; ``load_appconfig()`` returns a
+    mapping, so callers reading them back with ``.get()`` see ``None`` again.
+    """
     data = {
         section_name: {
             name: _to_toml_compatible(value, f"{section_name}/{name}")
             for name, value in section.items()
+            if value is not None
         }
         for section_name, section in data.items()
     }
