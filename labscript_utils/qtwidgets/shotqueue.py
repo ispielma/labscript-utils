@@ -68,7 +68,7 @@ class ShotQueueTreeView(QTreeView):
         menu = QMenu(self)
         delete_action = menu.addAction('Delete selected rows')
         delete_action.setEnabled(bool(self.selectionModel().selectedRows()))
-        chosen_action = menu.exec_(event.globalPos())
+        chosen_action = menu.exec(event.globalPos())
         if chosen_action is delete_action:
             self.deleteRequested.emit()
             event.accept()

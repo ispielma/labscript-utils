@@ -15,7 +15,7 @@ import sys
 from labscript_utils import dedent
 
 try:
-    from qtutils.qt import QtWidgets, QtCore, QtGui, QT_ENV
+    from qtutils.qt import QtWidgets, QtCore, QtGui
 except ImportError as e:
     if 'DLL load failed' in str(e):
         msg = """Failed to load Qt DLL. This can be caused by application shortcuts
@@ -27,16 +27,6 @@ except ImportError as e:
     raise
     
 Qt = QtCore.Qt
-
-# These are default in Qt6 and print a warning if set
-if QT_ENV == 'PyQt5':
-    # Set auto high-DPI scaling - this ensures pixel metrics are scaled
-    # appropriately so that we don't get a weird mix of large fonts and small
-    # everything else on High DPI displays:
-    QtWidgets.QApplication.setAttribute(Qt.AA_EnableHighDpiScaling, True)
-    # Use high res pixmaps if available, instead of rendering at low resolution and
-    # upscaling:
-    QtWidgets.QApplication.setAttribute(Qt.AA_UseHighDpiPixmaps, True)
 
 
 def configure_qapplication(qapplication):
