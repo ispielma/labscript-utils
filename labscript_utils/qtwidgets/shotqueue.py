@@ -300,6 +300,10 @@ class ShotQueueWidget(QWidget):
         path = os.path.abspath(str(row_info['path']))
         label = row_info.get('label', os.path.basename(path))
         tooltip = row_info.get('tooltip', path)
+        # Anything QStandardItem.setBackground() accepts, or None for the
+        # default. What a colour means is the caller's business; the widget
+        # only makes sure it marks the whole row and not one cell of it:
+        background = row_info.get('background')
         columns = list(row_info.get('columns', []))
         row_items = self._create_padding_items(self.queue_model.columnCount())
         row_items[self.path_column] = self._create_display_item(
@@ -310,6 +314,9 @@ class ShotQueueWidget(QWidget):
         extra_columns = [i for i in range(self.queue_model.columnCount()) if i != self.path_column]
         for column_index, column_info in zip(extra_columns, columns):
             row_items[column_index] = self._create_display_item_from_info(column_info)
+        if background is not None:
+            for item in row_items:
+                item.setBackground(background)
         return row_items
 
     def _create_padding_items(self, count):
