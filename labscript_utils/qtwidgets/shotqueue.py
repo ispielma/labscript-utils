@@ -43,8 +43,16 @@ class _RuleBelowDelegate(QStyledItemDelegate):
         QStyledItemDelegate.paint(self, painter, option, index)
         if not index.data(RULE_BELOW_ROLE):
             return
+        # From the text colour, dimmed -- not from a frame role like Dark or
+        # Mid. Those are defined relative to Window rather than to the list a
+        # row sits on, and a dark theme puts Dark *below* Base: measured
+        # against a #232323 list, a Dark rule differs by 0.04 in luminance and
+        # cannot be seen at all. Text against Base is the one contrast every
+        # usable theme has to get right, whichever way round it is.
+        colour = QColor(option.palette.color(QPalette.ColorRole.Text))
+        colour.setAlpha(140)
         painter.save()
-        painter.setPen(option.palette.color(QPalette.ColorRole.Dark))
+        painter.setPen(colour)
         painter.drawLine(
             option.rect.left(),
             option.rect.bottom(),
