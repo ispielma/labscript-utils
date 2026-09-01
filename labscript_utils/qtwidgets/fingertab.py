@@ -33,12 +33,7 @@ class FingerTabBarWidget(QtWidgets.QTabBar):
 # Shamelessly stolen from this thread:
 #   http://www.riverbankcomputing.com/pipermail/pyqt/2005-December/011724.html
 class FingerTabWidget(QtWidgets.QTabWidget):
-    """A QTabWidget equivalent which uses our FingerTabBarWidget.
-
-    runmanager has a class of this name too, in its __main__, grown from the
-    same gist into something rather larger: closable tabs, per-tab movability
-    and a tab bar to match. Worth knowing before adding any of that here.
-    """
+    """A QTabWidget equivalent which uses our FingerTabBarWidget"""
 
     def __init__(self, parent, *args):
         QtWidgets.QTabWidget.__init__(self, parent, *args)
