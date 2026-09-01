@@ -44,6 +44,28 @@ def test_row_background_colours_every_column_of_that_row():
     assert all(brush is None for brush in row_backgrounds(widget, 1))
 
 
+def row_fonts(widget, row):
+    return [
+        widget.queue_model.item(row, column).font()
+        for column in range(widget.queue_model.columnCount())
+    ]
+
+
+def test_a_struck_out_row_is_struck_out_in_every_column():
+    # A row the operator has asked to be rid of, which cannot simply be removed
+    # because something else may still be using its file. Struck through says
+    # both halves at once: it is still here, and it is finished with.
+    widget = make_widget()
+    widget.set_row_infos(
+        [
+            {'path': '/tmp/shot_a.h5', 'strikeout': True},
+            {'path': '/tmp/shot_b.h5'},
+        ]
+    )
+    assert all(font.strikeOut() for font in row_fonts(widget, 0))
+    assert not any(font.strikeOut() for font in row_fonts(widget, 1))
+
+
 def luminance(colour):
     return (
         0.2126 * colour.redF() + 0.7152 * colour.greenF() + 0.0722 * colour.blueF()
@@ -89,12 +111,19 @@ def test_the_rule_under_a_row_is_visible_on_a_dark_theme():
 
         view = widget.queue_view
         image = view.viewport().grab().toImage()
+        # grab() returns device pixels while visualRect returns logical ones,
+        # and on a retina screen those differ by a factor of two. Reading the
+        # image at logical coordinates sampled a row well above the rule, found
+        # two identical pixels and reported a contrast of exactly zero -- so
+        # the test passed or failed according to which display the window
+        # happened to open on, which is no test at all.
+        scale = image.devicePixelRatio() or 1
         first = view.visualRect(widget.queue_model.index(0, widget.path_column))
         second = view.visualRect(widget.queue_model.index(1, widget.path_column))
-        x = first.center().x()
-        background = QColor(image.pixel(x, second.center().y()))
+        x = int(first.center().x() * scale)
+        background = QColor(image.pixel(x, int(second.center().y() * scale)))
         contrast = max(
-            abs(luminance(QColor(image.pixel(x, y))) - luminance(background))
+            abs(luminance(QColor(image.pixel(x, int(y * scale)))) - luminance(background))
             for y in range(first.bottom() - 1, first.bottom() + 2)
         )
     finally:

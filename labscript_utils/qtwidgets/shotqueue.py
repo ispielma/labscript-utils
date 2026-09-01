@@ -370,6 +370,10 @@ class ShotQueueWidget(QWidget):
         background = row_info.get('background')
         foreground = row_info.get('foreground')
         row_id = row_info.get('row_id')
+        # A row that is still here but finished with, which the caller cannot
+        # simply remove -- something else may still hold its file. Struck
+        # through says both halves at once.
+        strikeout = bool(row_info.get('strikeout', False))
         selectable = row_info.get('selectable', True)
         rule_below = bool(row_info.get('rule_below', False))
         columns = list(row_info.get('columns', []))
@@ -387,6 +391,10 @@ class ShotQueueWidget(QWidget):
                 item.setBackground(background)
             if foreground is not None:
                 item.setForeground(foreground)
+            if strikeout:
+                font = item.font()
+                font.setStrikeOut(True)
+                item.setFont(font)
             item.setSelectable(bool(selectable))
             if rule_below:
                 item.setData(True, RULE_BELOW_ROLE)
