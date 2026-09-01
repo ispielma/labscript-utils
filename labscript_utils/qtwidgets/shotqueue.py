@@ -19,7 +19,39 @@ from qtutils.qt.QtCore import pyqtSignal as Signal
 
 
 FILEPATH_COLUMN = 0
-__all__ = ['FILEPATH_COLUMN', 'ShotQueueTreeView', 'ShotQueueWidget']
+# An identity the caller attaches to a row, and gets back when asked what is
+# selected. Rows are reported by identity rather than by position because the
+# queue behind the widget moves on its own -- a shot finishing removes a row
+# while the operator has one selected -- and a position that meant one row when
+# it was drawn means another by the time it is acted on.
+ROW_ID_ROLE = Qt.UserRole + 1
+# Whether a rule is drawn under a row, to set it apart from those below it.
+RULE_BELOW_ROLE = Qt.UserRole + 2
+__all__ = [
+    'FILEPATH_COLUMN',
+    'ROW_ID_ROLE',
+    'RULE_BELOW_ROLE',
+    'ShotQueueTreeView',
+    'ShotQueueWidget',
+]
+
+
+class _RuleBelowDelegate(QStyledItemDelegate):
+    """Draws a rule under any row whose items ask for one."""
+
+    def paint(self, painter, option, index):
+        QStyledItemDelegate.paint(self, painter, option, index)
+        if not index.data(RULE_BELOW_ROLE):
+            return
+        painter.save()
+        painter.setPen(option.palette.color(QPalette.ColorRole.Dark))
+        painter.drawLine(
+            option.rect.left(),
+            option.rect.bottom(),
+            option.rect.right(),
+            option.rect.bottom(),
+        )
+        painter.restore()
 
 
 def _normalise_extensions(accepted_extensions):
@@ -163,6 +195,8 @@ class ShotQueueWidget(QWidget):
                 else QHeaderView.ResizeToContents
             )
             self.queue_view.header().setSectionResizeMode(column, resize_mode)
+        self._rule_delegate = _RuleBelowDelegate(self.queue_view)
+        self.queue_view.setItemDelegate(self._rule_delegate)
 
         self.add_button = QToolButton(self)
         self.add_button.setText('Add')
@@ -199,8 +233,27 @@ class ShotQueueWidget(QWidget):
     def selected_files(self):
         return [self._queue_path_for_row(row) for row in self.selected_rows()]
 
+    def selected_ids(self):
+        """The identities of the selected rows, skipping rows given none."""
+        ids = []
+        for row in self.selected_rows():
+            row_id = self.queue_model.item(row, self.path_column).data(ROW_ID_ROLE)
+            if row_id is not None:
+                ids.append(row_id)
+        return ids
+
     def selected_rows(self):
         return sorted(index.row() for index in self.queue_view.selectionModel().selectedRows())
+
+    def select_ids(self, row_ids):
+        """Reselect the rows carrying these identities, ignoring any gone."""
+        wanted = set(row_ids)
+        rows = []
+        for row in range(self.queue_model.rowCount()):
+            row_id = self.queue_model.item(row, self.path_column).data(ROW_ID_ROLE)
+            if row_id is not None and row_id in wanted:
+                rows.append(row)
+        self._select_rows(rows)
 
     def select_paths(self, paths):
         if isinstance(paths, str):
@@ -308,6 +361,9 @@ class ShotQueueWidget(QWidget):
         # chosen for different themes:
         background = row_info.get('background')
         foreground = row_info.get('foreground')
+        row_id = row_info.get('row_id')
+        selectable = row_info.get('selectable', True)
+        rule_below = bool(row_info.get('rule_below', False))
         columns = list(row_info.get('columns', []))
         row_items = self._create_padding_items(self.queue_model.columnCount())
         row_items[self.path_column] = self._create_display_item(
@@ -323,6 +379,11 @@ class ShotQueueWidget(QWidget):
                 item.setBackground(background)
             if foreground is not None:
                 item.setForeground(foreground)
+            item.setSelectable(bool(selectable))
+            if rule_below:
+                item.setData(True, RULE_BELOW_ROLE)
+        if row_id is not None:
+            row_items[self.path_column].setData(row_id, ROW_ID_ROLE)
         return row_items
 
     def _create_padding_items(self, count):
