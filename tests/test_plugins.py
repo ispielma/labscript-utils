@@ -680,6 +680,118 @@ def test_menu_context_renders_locations_paths_groups_order_and_action_options(ca
     assert 'plugin_malformed' in caplog.text
 
 
+def rendered_actions(menu):
+    return {item[1].name: item[1] for item in menu.items if item[0] == 'action'}
+
+
+def test_menu_context_calls_callable_enabled_and_applies_the_result():
+    file_menu = FakeMenu('file')
+    context = MenuContext()
+    context.register_location('file', file_menu)
+    for name, enabled in [
+        ('Available', lambda: True),
+        ('Unavailable', lambda: False),
+        ('Truthy', lambda: ['a figure is active']),
+        ('Falsey', lambda: []),
+    ]:
+        context.add(
+            'plugin_a',
+            {'location': 'file', 'name': name, 'enabled': enabled},
+            {},
+        )
+
+    context.render()
+
+    actions = rendered_actions(file_menu)
+    # Coerced to real booleans: a Qt action rejects anything else.
+    assert actions['Available'].enabled is True
+    assert actions['Truthy'].enabled is True
+    assert actions['Unavailable'].enabled is False
+    assert actions['Falsey'].enabled is False
+
+
+def test_menu_context_disables_the_action_when_enabled_callable_raises(caplog):
+    file_menu = FakeMenu('file')
+    logger = logging.getLogger('test.plugins.enabled')
+    context = MenuContext(logger=logger)
+    context.register_location('file', file_menu)
+
+    def broken():
+        raise RuntimeError('precondition unavailable')
+
+    context.add(
+        'plugin_broken',
+        {'location': 'file', 'name': 'Broken', 'enabled': broken},
+        {},
+    )
+    context.add(
+        'plugin_a',
+        {'location': 'file', 'name': 'Later', 'enabled': lambda: True},
+        {},
+    )
+
+    with caplog.at_level(logging.ERROR, logger='test.plugins.enabled'):
+        context.render()
+
+    actions = rendered_actions(file_menu)
+    assert actions['Broken'].enabled is False
+    # The failure disables one action; it does not abort the menu build.
+    assert actions['Later'].enabled is True
+    assert 'Broken' in caplog.text
+    assert 'plugin_broken' in caplog.text
+    assert 'precondition unavailable' in caplog.text
+
+
+def test_menu_context_applies_non_callable_enabled_unchanged():
+    file_menu = FakeMenu('file')
+    context = MenuContext()
+    context.register_location('file', file_menu)
+    context.add(
+        'plugin_a',
+        {'location': 'file', 'name': 'Off', 'enabled': False},
+        {},
+    )
+    context.add(
+        'plugin_a',
+        {'location': 'file', 'name': 'On', 'enabled': True},
+        {},
+    )
+    context.add('plugin_a', {'location': 'file', 'name': 'Default'}, {})
+
+    context.render()
+
+    actions = rendered_actions(file_menu)
+    assert actions['Off'].enabled is False
+    assert actions['On'].enabled is True
+    assert actions['Default'].enabled is True
+
+
+def test_menu_context_does_not_cache_the_resolved_enabled_in_the_contribution():
+    file_menu = FakeMenu('file')
+    context = MenuContext()
+    context.register_location('file', file_menu)
+    answers = iter([True, False])
+    calls = []
+
+    def enabled():
+        calls.append(None)
+        return next(answers)
+
+    contribution = {'location': 'file', 'name': 'Toggle', 'enabled': enabled}
+
+    context.add('plugin_a', contribution, {})
+    context.render()
+    assert file_menu.items[-1][1].enabled is True
+    # Rendering must leave the callable in place for a later re-render or an
+    # application-side refresh to consult again.
+    assert contribution['enabled'] is enabled
+
+    context.add('plugin_a', contribution, {})
+    context.render()
+    assert file_menu.items[-1][1].enabled is False
+    assert len(calls) == 2
+
+
 def _make_plugin_dirs(tmp_path, names):
     for name in names:
         (tmp_path / name).mkdir(parents=True)
