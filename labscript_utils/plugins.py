@@ -353,6 +353,17 @@ Contribution menu skeleton with MenuContext
 * ``shortcut``, ``icon``, ``checkable``, and ``enabled``: optional action
   properties applied when the concrete action object supports them
 
+``enabled`` may also be a zero-argument callable, for a contribution whose
+availability depends on live application state rather than on a flag known when
+the plugin is written. ``MenuContext.render()`` calls it once, at render time,
+and applies ``bool()`` to the result. The contribution dictionary is left
+holding the callable rather than the resolved value, so an application that
+renders or refreshes its menus again re-evaluates the precondition. If the
+callable raises, the action is disabled and the failure is logged: a
+precondition that cannot be established should leave that one action reporting
+itself unavailable, not abort the whole menu build. A non-callable ``enabled``
+is applied to the action unchanged.
+
 File-dialog-style plugin example::
 
     class FileDialogsPlugin(BasePlugin):
@@ -941,6 +952,11 @@ class MenuContext(object):
 
         Collected contributions are consumed, so calling this twice does not
         duplicate every menu entry.
+
+        A contribution's ``enabled`` value may be a zero-argument callable,
+        which is called here and its result applied as a boolean. A callable
+        that raises disables that action and is logged, leaving the rest of the
+        menu to build.
         """
         contributions, self.contributions = self.contributions, []
         grouped = {}
@@ -1050,7 +1066,25 @@ class MenuContext(object):
                 if hasattr(action, 'setCheckable'):
                     action.setCheckable(checkable)
 
+                # Resolved into a local: the contribution keeps the callable so
+                # that a later re-render re-evaluates the precondition rather
+                # than reusing this render's answer.
                 enabled = contribution.get('enabled', True)
+                if callable(enabled):
+                    try:
+                        enabled = bool(enabled())
+                    except Exception:
+                        # A precondition that cannot be established must not
+                        # take the rest of the menu down with it. Disabling is
+                        # the safe reading: the action reports itself
+                        # unavailable rather than offering an operation whose
+                        # precondition is unknown.
+                        enabled = False
+                        self.logger.exception(
+                            "Menu contribution '%s' from plugin '%s' raised "
+                            "while resolving its 'enabled' callable. Disabling "
+                            "the action." % (name, plugin_name)
+                        )
                 if hasattr(action, 'setEnabled'):
                     action.setEnabled(enabled)
 
