@@ -28,8 +28,10 @@ or ``LABSCRIPT_NO_ERROR_DIALOG=0`` to let the dialog through -- ``''``, ``'0'``,
 ignoring surrounding whitespace.
 
 A test *of* the error dialog is better off setting the flag directly than
-arranging the environment around itself. ``excepthook`` reads it where it uses
-it, so assignment takes effect immediately:
+arranging the environment around itself. ``excepthook`` consults the environment
+once, when it imports, and the handler then reads the module global -- so
+assigning that takes effect immediately, while changing the environment
+afterwards does nothing:
 
     import labscript_utils.excepthook as excepthook
     excepthook.NO_ERROR_DIALOG = False
