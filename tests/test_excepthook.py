@@ -1,10 +1,9 @@
 """Tests for the graphical error dialog's opt-out.
 
-The opt-out is a fork addition and had no coverage at all. It is worth some,
-because it is the switch every test run in the suite depends on to stay silent,
-and because getting it wrong is invisible: the failure mode is a dialog that
-does not appear when someone asked for one, or windows appearing during a test
-run that was supposed to be quiet.
+This is the switch every test run in the suite depends on to stay silent, and
+getting it wrong is invisible from inside the code: the failure mode is a dialog
+that does not appear when someone asked for one, or windows appearing during a
+test run that was supposed to be quiet.
 """
 import sys
 from pathlib import Path
@@ -21,8 +20,8 @@ class TestEnvironmentFlag(object):
         assert excepthook._no_error_dialog_from_env({}) is False
 
     def test_values_that_read_as_false_leave_the_dialog_enabled(self):
-        # '0' is the one that matters: it used to suppress the dialog, which is
-        # the opposite of what anyone writing it intends.
+        # '0' is the one that matters: a bare truth test on the string would
+        # suppress the dialog, the opposite of what anyone writing it intends.
         for value in ['', '0', 'false', 'no', 'off']:
             environ = {'LABSCRIPT_NO_ERROR_DIALOG': value}
             assert excepthook._no_error_dialog_from_env(environ) is False, value

@@ -30,9 +30,10 @@ def _no_error_dialog_from_env(environ=None):
     """Return whether the environment asks for the graphical dialog to be off.
 
     An unset variable leaves the dialog enabled, and so does any value that
-    ordinarily reads as false. Reading it as a bare truth test instead meant
-    LABSCRIPT_NO_ERROR_DIALOG=0 suppressed the dialog, which is the opposite of
-    what it looks like and bites anyone trying to get the dialog back.
+    ordinarily reads as false. The falsey values have to be spelled out: a bare
+    truth test on the string would make LABSCRIPT_NO_ERROR_DIALOG=0 suppress the
+    dialog, the opposite of what it looks like, and would leave no guessable way
+    to ask for the dialog back.
     """
     if environ is None:
         environ = os.environ

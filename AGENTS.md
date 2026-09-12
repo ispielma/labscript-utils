@@ -62,15 +62,17 @@ they cannot drift. runmanager calls the unescaper in
 per-shot pass and needs the escaping to survive it. Unescaping centrally looks
 like a tidy-up and silently breaks per-shot output paths.
 
-**Config values are natively typed.** Since the TOML migration
-`LabConfig.get()` returns real ints, floats, bools and lists rather than
-strings. Anything treating a labconfig option as a string — `.split(',')` on a
-path list is the one that bit — needs `labscript_profile.toml_config.as_config_list()`
-or an equivalent. Both places it bit ran before anyone could catch it:
-`_get_device_dirs()` at module scope, so `import labscript_utils.device_registry`
-raised and took four applications with it, and `add_userlib_and_pythonlib()`
-from `labscript-suite.pth`, so it fired at every interpreter start and left
-`userlib` off `sys.path` for the whole session.
+**Config values are natively typed.** `LabConfig.get()` returns real ints,
+floats, bools and lists, not strings, so an option written as a TOML array
+arrives as a list. Anything treating a labconfig option as a string — `.split(',')`
+on a path list is the tempting one — needs
+`labscript_profile.toml_config.as_config_list()` or an equivalent, which accepts
+either shape. Two consumers here run somewhere a `TypeError` cannot be caught
+and reported: `_get_device_dirs()` is evaluated at module scope, so a failure
+takes down `import labscript_utils.device_registry` and every application that
+imports it, and `add_userlib_and_pythonlib()` runs from `labscript-suite.pth` at
+interpreter start, where a failure leaves `userlib` off `sys.path` for the whole
+session.
 
 **App config paths append, they do not replace.** `appconfig_path_with_suffix()`
 exists because `Path.with_suffix()` truncates at the last dot, which silently
