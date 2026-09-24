@@ -22,15 +22,12 @@ Trigger(
 RemoteBLACS(name='test_remote', host='localhost')
 
 # We then initiate an IMAQdxCamera using this RemoteBLACS instance
-# using mock=True to bypass any attempts to commmunicate with an
-# actual camera, and generate fake data at the end of the shot
 IMAQdxCamera(
     name='camera',
     parent_device=camera_trigger,
     connection='trigger',
     serial_number=0xDEADBEEF,
     worker=test_remote,
-    mock=True,
 )
 
 # Begin issuing labscript primitives
