@@ -1,9 +1,5 @@
 import configparser
-
-try:
-    import tomllib
-except ImportError:
-    import tomli as tomllib
+import tomllib
 
 import tomli_w
 
