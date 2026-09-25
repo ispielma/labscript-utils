@@ -226,13 +226,10 @@ class ZMQServer(zprocess.ZMQServer):
             if sendable:
                 returned = e
             else:
-                try:
-                    returned = RuntimeError(str(e))
-                except Exception:
-                    returned = RuntimeError(
-                        f'The handler raised {type(e).__name__}, whose message '
-                        'could not be read.'
-                    )
+                # The message names the class, since the class cannot go back. Line 0
+                # is the exception itself; any notes it carries follow it, and already
+                # travel in the traceback note.
+                returned = RuntimeError(traceback.format_exception_only(e)[0].strip())
             returned.add_note(note)
             return returned
 
