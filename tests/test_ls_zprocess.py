@@ -18,6 +18,7 @@ import threading
 import pytest
 
 import labscript_utils.ls_zprocess as ls_zprocess
+from labscript_utils.labconfig import LabConfig
 from labscript_utils.ls_zprocess import ZMQClient, ZMQServer
 
 
@@ -35,28 +36,22 @@ class ShotClient(ZMQClient):
     default_port = 1
 
 
-class LabConfigNamingServer:
-    def __init__(self, port):
-        self.values = {
-            ('servers', 'shots'): 'localhost',
-            ('ports', 'shots'): port,
-            ('timeouts', 'communication_timeout'): 5,
-        }
-
-    def get(self, section, option, fallback=None):
-        return self.values.get((section, option), fallback)
-
-    getint = getfloat = get
-
-
 @pytest.fixture
-def client(monkeypatch):
+def client(monkeypatch, tmp_path):
     server = ShotServer()
-    monkeypatch.setattr(
-        ls_zprocess, 'LabConfig', lambda: LabConfigNamingServer(server.port)
-    )
-    yield ShotClient()
-    server.shutdown()
+    try:
+        # A real labconfig, naming the test server, stands in for the machine's own.
+        labconfig = tmp_path / 'labconfig.toml'
+        labconfig.write_text(
+            f"[servers]\nshots = 'localhost'\n\n[ports]\nshots = {server.port}\n\n"
+            "[timeouts]\ncommunication_timeout = 5\n"
+        )
+        monkeypatch.setattr(
+            ls_zprocess, 'LabConfig', lambda: LabConfig(config_path=labconfig)
+        )
+        yield ShotClient()
+    finally:
+        server.shutdown()
 
 
 def test_a_bound_client_reaches_its_servers_handler(client):
@@ -72,5 +67,6 @@ def test_a_handler_exception_reaches_the_client_and_the_server_goes_on(
     with pytest.raises(KeyError) as raised:
         client.request('status', 'shot_7')
     assert str(raised.value) == str(KeyError('shot_7'))
+    assert 'handle_status' in raised.value.__notes__[-1]
     assert client.request('status', 'shot_42') == 'done'
     assert hook_calls == []
