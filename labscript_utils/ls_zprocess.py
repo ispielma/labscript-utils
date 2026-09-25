@@ -207,27 +207,43 @@ class ZMQServer(zprocess.ZMQServer):
         A subclass defines ``handle_`` methods rather than overriding this one.
         An exception is returned rather than raised, so the client raises it and
         this server opens no error dialog. It keeps its message, with the
-        server's traceback attached as a note, and one that cannot be pickled is
-        sent as a ``RuntimeError`` instead.
+        server's traceback attached as a note, and one the client could not
+        unpickle or raise is sent as a ``RuntimeError`` instead.
         """
         try:
             command, args, kwargs = request_data
             return getattr(self, 'handle_' + command)(*args, **kwargs)
-        except Exception as e:
+        except BaseException as e:
             note = f'{type(self).__name__} traceback:\n{traceback.format_exc()}'
-            # zprocess pickles the reply outside its error handling, so a reply
-            # that could not make the round trip would stop this server.
+            # zprocess pickles the reply outside its error handling, and its client
+            # raises only an Exception it can unpickle. A class from this process's
+            # __main__ survives the round trip here but cannot be unpickled there.
             try:
                 pickle.loads(pickle.dumps(e, protocol=zprocess.PICKLE_PROTOCOL))
-                returned = e
+                sendable = isinstance(e, Exception) and type(e).__module__ != '__main__'
             except Exception:
-                returned = RuntimeError(str(e))
+                sendable = False
+            if sendable:
+                returned = e
+            else:
+                try:
+                    returned = RuntimeError(str(e))
+                except Exception:
+                    returned = RuntimeError(
+                        f'The handler raised {type(e).__name__}, whose message '
+                        'could not be read.'
+                    )
             returned.add_note(note)
             return returned
 
     def handle_hello(self):
         """Answer ``'hello'``, so a client can check that this server is up."""
         return 'hello'
+
+
+# Seconds a bound client waits for a reply when the labconfig sets no
+# timeouts/communication_timeout:
+COMMUNICATION_DEFAULT_TIMEOUT = 60
 
 
 class ZMQClient(zprocess.ZMQClient):
@@ -238,9 +254,7 @@ class ZMQClient(zprocess.ZMQClient):
 
     A subclass binds to one server by setting ``server``, its name in the
     labconfig, and ``default_port``, and then sends it requests with
-    :meth:`request`. Make a bound subclass's default instance by calling the
-    class, not with ``.instance()``, which can return this class's unbound
-    singleton.
+    :meth:`request`.
     """
 
     server = None
@@ -248,7 +262,8 @@ class ZMQClient(zprocess.ZMQClient):
     _instance = None
 
     def __init__(self, host=None, port=None, timeout=None):
-        """
+        """Create a client, bound to ``server`` when the class names one.
+
         Parameters
         ----------
         host : str, optional
@@ -259,7 +274,8 @@ class ZMQClient(zprocess.ZMQClient):
             else ``default_port``.
         timeout : float, optional
             For a bound client, defaults to the labconfig's
-            ``timeouts/communication_timeout``, else 60.
+            ``timeouts/communication_timeout``, else
+            ``COMMUNICATION_DEFAULT_TIMEOUT``.
         """
         config = get_config()
         super().__init__(
@@ -276,7 +292,9 @@ class ZMQClient(zprocess.ZMQClient):
                 )
             if timeout is None:
                 timeout = labconfig.getfloat(
-                    'timeouts', 'communication_timeout', fallback=60
+                    'timeouts',
+                    'communication_timeout',
+                    fallback=COMMUNICATION_DEFAULT_TIMEOUT,
                 )
         self.host = host
         self.port = port
@@ -284,8 +302,9 @@ class ZMQClient(zprocess.ZMQClient):
 
     @classmethod
     def instance(cls):
-        # Return previously initialised singleton:
-        if cls._instance is None:
+        # Return previously initialised singleton. Only this class's own is looked
+        # at, so a subclass never returns its base class's:
+        if cls.__dict__.get('_instance') is None:
             # Create singleton:
             cls._instance = cls()
         return cls._instance
