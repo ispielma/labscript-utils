@@ -12,6 +12,8 @@
 #####################################################################
 import sys
 import os
+import pickle
+import traceback
 from socket import gethostbyname
 from packaging.version import Version
 import zmq
@@ -199,22 +201,86 @@ class ZMQServer(zprocess.ZMQServer):
             **kwargs
         )
 
+    def handler(self, request_data):
+        """Answer ``[command, args, kwargs]`` by calling ``handle_<command>``.
+
+        A subclass defines ``handle_`` methods rather than overriding this one.
+        An exception is returned rather than raised, so the client raises it and
+        this server opens no error dialog. It keeps its message, with the
+        server's traceback attached as a note, and one that cannot be pickled is
+        sent as a ``RuntimeError`` instead.
+        """
+        try:
+            command, args, kwargs = request_data
+            return getattr(self, 'handle_' + command)(*args, **kwargs)
+        except Exception as e:
+            note = f'{type(self).__name__} traceback:\n{traceback.format_exc()}'
+            # zprocess pickles the reply outside its error handling, so a reply
+            # that could not make the round trip would stop this server.
+            try:
+                pickle.loads(pickle.dumps(e, protocol=zprocess.PICKLE_PROTOCOL))
+                returned = e
+            except Exception:
+                returned = RuntimeError(str(e))
+            returned.add_note(note)
+            return returned
+
+    def handle_hello(self):
+        """Answer ``'hello'``, so a client can check that this server is up."""
+        return 'hello'
+
 
 class ZMQClient(zprocess.ZMQClient):
     """A singleton zprocess.ZMQClient configured with settings from labconfig for
     security.  Being a singleton is not enforced - the class can still be
     instantiated as normal - but calling the .instance() classmethod will give the
-    singleton."""
+    singleton.
 
+    A subclass binds to one server by setting ``server``, its name in the
+    labconfig, and ``default_port``, and then sends it requests with
+    :meth:`request`. Make a bound subclass's default instance by calling the
+    class, not with ``.instance()``, which can return this class's unbound
+    singleton.
+    """
+
+    server = None
+    default_port = None
     _instance = None
 
-    def __init__(self):
+    def __init__(self, host=None, port=None, timeout=None):
+        """
+        Parameters
+        ----------
+        host : str, optional
+            For a bound client, defaults to the labconfig's ``servers/<server>``,
+            else ``localhost``.
+        port : int, optional
+            For a bound client, defaults to the labconfig's ``ports/<server>``,
+            else ``default_port``.
+        timeout : float, optional
+            For a bound client, defaults to the labconfig's
+            ``timeouts/communication_timeout``, else 60.
+        """
         config = get_config()
-        shared_secret = config['shared_secret']
-        allow_insecure = config['allow_insecure']
-        zprocess.ZMQClient.__init__(
-            self, shared_secret=shared_secret, allow_insecure=allow_insecure
+        super().__init__(
+            shared_secret=config['shared_secret'],
+            allow_insecure=config['allow_insecure'],
         )
+        if self.server is not None:
+            labconfig = LabConfig()
+            if host is None:
+                host = labconfig.get('servers', self.server, fallback='localhost')
+            if port is None:
+                port = labconfig.getint(
+                    'ports', self.server, fallback=self.default_port
+                )
+            if timeout is None:
+                timeout = labconfig.getfloat(
+                    'timeouts', 'communication_timeout', fallback=60
+                )
+        self.host = host
+        self.port = port
+        self.timeout = timeout
 
     @classmethod
     def instance(cls):
@@ -223,6 +289,21 @@ class ZMQClient(zprocess.ZMQClient):
             # Create singleton:
             cls._instance = cls()
         return cls._instance
+
+    def request(self, command, *args, **kwargs):
+        """Return the server's ``handle_<command>(*args, **kwargs)``.
+
+        An exception it raises is raised here, with its own class and message.
+        """
+        return self.get(
+            self.port, self.host, data=[command, args, kwargs], timeout=self.timeout
+        )
+
+    def say_hello(self, timeout=None):
+        """Return the server's ``'hello'``, waiting ``timeout`` seconds if given."""
+        if timeout is None:
+            timeout = self.timeout
+        return self.get(self.port, self.host, data=['hello', (), {}], timeout=timeout)
         
 
 class Context(SecureContext):
