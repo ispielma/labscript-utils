@@ -100,7 +100,8 @@ def get_config():
         config['shared_secret'] = None
         config['shared_secret_file'] = None
     else:
-        config['shared_secret'] = open(shared_secret_file).read().strip()
+        with open(shared_secret_file) as f:
+            config['shared_secret'] = f.read().strip()
         config['shared_secret_file'] = shared_secret_file
     try:
         config['allow_insecure'] = labconfig.getboolean('security', 'allow_insecure')
