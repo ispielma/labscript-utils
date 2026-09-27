@@ -102,7 +102,8 @@ def get_config():
         config['shared_secret'] = None
         config['shared_secret_file'] = None
     else:
-        config['shared_secret'] = open(shared_secret_file).read().strip()
+        with open(shared_secret_file) as f:
+            config['shared_secret'] = f.read().strip()
         config['shared_secret_file'] = shared_secret_file
     try:
         config['allow_insecure'] = labconfig.getboolean('security', 'allow_insecure')
@@ -279,7 +280,7 @@ class ZMQClient(zprocess.ZMQClient):
             shared_secret=config['shared_secret'],
             allow_insecure=config['allow_insecure'],
         )
-        if self.server is not None:
+        if self.server is not None and None in (host, port, timeout):
             labconfig = LabConfig()
             if host is None:
                 host = labconfig.get('servers', self.server, fallback='localhost')
