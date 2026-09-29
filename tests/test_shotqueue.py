@@ -73,15 +73,15 @@ def luminance(colour):
 
 
 DARK_THEME = {
-    'Base': '#232323',
-    'Text': '#dddddd',
-    'Window': '#2b2b2b',
-    'WindowText': '#dddddd',
+    QPalette.ColorRole.Base: '#232323',
+    QPalette.ColorRole.Text: '#dddddd',
+    QPalette.ColorRole.Window: '#2b2b2b',
+    QPalette.ColorRole.WindowText: '#dddddd',
     # Below Base, which is where a dark theme puts it and the whole point of
     # this test: a rule drawn in Dark is then invisible on the list.
-    'Dark': '#191919',
-    'Mid': '#3a3a3a',
-    'Shadow': '#000000',
+    QPalette.ColorRole.Dark: '#191919',
+    QPalette.ColorRole.Mid: '#3a3a3a',
+    QPalette.ColorRole.Shadow: '#000000',
 }
 
 
@@ -96,7 +96,7 @@ def test_the_rule_under_a_row_is_visible_on_a_dark_theme():
     saved = application.palette()
     palette = QPalette(saved)
     for role, value in DARK_THEME.items():
-        palette.setColor(getattr(QPalette.ColorRole, role), QColor(value))
+        palette.setColor(role, QColor(value))
     application.setPalette(palette)
     try:
         widget.set_row_infos(

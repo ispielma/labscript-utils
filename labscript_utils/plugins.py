@@ -1277,13 +1277,13 @@ class PluginManager(object):
         """Register an application-owned plugin contribution context."""
         self.contexts[name] = context
 
-    def _get_contributions(self, plugin, module_name, method_name, label):
+    def _get_contributions(self, hook, module_name, label):
         """Return a plugin contribution iterable, logging malformed results."""
-        if not hasattr(plugin, method_name):
+        if hook is None:
             return []
 
         try:
-            contributions = getattr(plugin, method_name)()
+            contributions = hook()
         except Exception:
             self.logger.exception(
                 "Error getting %s contributions from plugin '%s'. Skipping."
@@ -1320,9 +1320,8 @@ class PluginManager(object):
         """Route plugin-declared UI and menu contributions to app contexts."""
         for module_name, plugin in self.plugins.items():
             ui_contributions = self._get_contributions(
-                plugin,
+                getattr(plugin, 'get_ui_contributions', None),
                 module_name,
-                'get_ui_contributions',
                 'UI',
             )
 
@@ -1357,9 +1356,8 @@ class PluginManager(object):
                     )
 
             menu_contributions = self._get_contributions(
-                plugin,
+                getattr(plugin, 'get_menu_contributions', None),
                 module_name,
-                'get_menu_contributions',
                 'menu',
             )
 
@@ -1556,19 +1554,19 @@ class PluginManager(object):
             pass
         return (data,)
 
-    def _defines_hook(self, plugin, method_name):
-        """Return whether ``plugin`` overrides ``method_name`` meaningfully."""
-        plugin_method = getattr(type(plugin), method_name, None)
-        if plugin_method is None:
-            return False
-
-        base_method = getattr(BasePlugin, method_name, None)
-        return plugin_method is not base_method
-
     def _get_plugin_event_handlers(self, module_name, plugin):
         """Return normalized event handlers for one plugin."""
-        has_modern = self._defines_hook(plugin, 'get_event_handlers')
-        has_legacy = self._defines_hook(plugin, 'get_callbacks')
+        # A hook a plugin lacks, or inherits unchanged from BasePlugin, is not one
+        # it defines.
+        plugin_type = type(plugin)
+        has_modern = getattr(plugin_type, 'get_event_handlers', None) not in (
+            None,
+            BasePlugin.get_event_handlers,
+        )
+        has_legacy = getattr(plugin_type, 'get_callbacks', None) not in (
+            None,
+            BasePlugin.get_callbacks,
+        )
 
         if has_modern:
             if has_legacy:
