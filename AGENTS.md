@@ -37,11 +37,6 @@ display reading the image at logical coordinates samples the wrong row and
 reports a contrast of exactly zero. Read that comment before touching anything
 that measures rendered output.
 
-`runmanager/tests/test_blacs_status.py` also compares images, but it renders two
-pixmaps from a `QIcon` at a fixed size and asserts they differ. It never shows a
-widget, never grabs one, and has no exposure to the trap — so it is not a
-precedent for how to write one that does.
-
 ### Running them
 
 From inside this repository, never from the workspace root. A workspace-root
